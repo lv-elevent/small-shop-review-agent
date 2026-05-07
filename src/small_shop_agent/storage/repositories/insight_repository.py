@@ -14,11 +14,11 @@ class InsightRepository:
         with get_session() as conn:
             conn.executemany(
                 """INSERT OR REPLACE INTO insights
-                   (batch_id, rank, issue_name, topic, mention_count,
+                   (batch_id, rank, issue_name, issue_summary, topic, mention_count,
                     severity_level, priority_score, suggested_action,
                     evidence_count, evidence_status)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                [(batch_id, i["rank"], i["issue_name"], i["topic"],
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                [(batch_id, i["rank"], i["issue_name"], i.get("issue_summary", ""), i["topic"],
                   i["mention_count"], i["severity_level"], i["priority_score"],
                   i["suggested_action"], i.get("evidence_count", 0),
                   i.get("evidence_status", "sufficient"))

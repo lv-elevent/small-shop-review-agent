@@ -151,6 +151,7 @@ class WorkflowService:
                 insight_rows.append({
                     "rank": ins["rank"],
                     "issue_name": ins["issue_name"],
+                    "issue_summary": ins.get("issue_summary", ""),
                     "topic": ins["topic"],
                     "mention_count": ins["mention_count"],
                     "severity_level": ins["severity_level"],
