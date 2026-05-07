@@ -1,23 +1,82 @@
 [
   {
     "step_name": "input_validation",
-    "input_summary": "上传 sample_reviews.csv",
-    "output_summary": "128 条有效评论，4 条重复，2 条空评论跳过",
+    "input_summary": "加载 sample_reviews.csv / 15 行",
+    "output_summary": "15 条总行数，13 条有效，1 条空评论，1 条重复",
     "status": "passed",
-    "latency_ms": 120
+    "latency_ms": 5,
+    "model_name": "rule_based"
+  },
+  {
+    "step_name": "data_cleaning",
+    "input_summary": "15 条原始评论",
+    "output_summary": "清洗完成：13 条有效，1 条空评论已跳过，1 条重复已去重",
+    "status": "warning",
+    "latency_ms": 3,
+    "model_name": "rule_based"
   },
   {
     "step_name": "classification",
-    "input_summary": "128 条有效评论",
-    "output_summary": "完成主题分类",
+    "input_summary": "13 条有效评论",
+    "output_summary": "主题分类完成：waiting_time(3), service(3), product(4), environment(3), hygiene(2), price(1)",
     "status": "passed",
-    "latency_ms": 8400
+    "latency_ms": 45,
+    "model_name": "mock_classifier"
+  },
+  {
+    "step_name": "sentiment_analysis",
+    "input_summary": "13 条已分类评论",
+    "output_summary": "情绪分析完成：positive(6), neutral(2), negative(5)",
+    "status": "passed",
+    "latency_ms": 38,
+    "model_name": "mock_sentiment"
+  },
+  {
+    "step_name": "issue_aggregation",
+    "input_summary": "13 条分析结果，5 条差评候选",
+    "output_summary": "聚合完成，生成 Top 3 问题",
+    "status": "passed",
+    "latency_ms": 22,
+    "model_name": "mock_aggregator"
+  },
+  {
+    "step_name": "evidence_check",
+    "input_summary": "3 条洞察",
+    "output_summary": "证据核查完成：3 条 evidence_status=sufficient，共 5 条证据",
+    "status": "passed",
+    "latency_ms": 15,
+    "model_name": "mock_evidence"
+  },
+  {
+    "step_name": "reply_drafting",
+    "input_summary": "5 条差评候选",
+    "output_summary": "生成 5 条回复草稿",
+    "status": "passed",
+    "latency_ms": 60,
+    "model_name": "mock_drafter"
+  },
+  {
+    "step_name": "safety_check",
+    "input_summary": "5 条回复草稿",
+    "output_summary": "安全检查完成：3 条通过，1 条需重写，1 条已拦截",
+    "status": "passed",
+    "latency_ms": 25,
+    "model_name": "mock_safety"
   },
   {
     "step_name": "human_approval",
-    "input_summary": "8 条待审批回复",
-    "output_summary": "3 条已批准，5 条待处理",
+    "input_summary": "5 条待审批回复",
+    "output_summary": "0 条已批准，5 条待处理",
     "status": "pending",
-    "latency_ms": null
+    "latency_ms": null,
+    "model_name": null
+  },
+  {
+    "step_name": "eval_run",
+    "input_summary": "评测数据集就绪",
+    "output_summary": "评测待执行",
+    "status": "pending",
+    "latency_ms": null,
+    "model_name": null
   }
 ]

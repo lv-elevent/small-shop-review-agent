@@ -1,0 +1,14 @@
+{
+  "batch_id": "batch-demo-001",
+  "store_type": "coffee_shop",
+  "source_type": "demo_mode",
+  "file_name": "sample_reviews.csv",
+  "total_rows": 15,
+  "valid_review_count": 13,
+  "duplicate_count": 1,
+  "empty_review_count": 1,
+  "schema_error_count": 0,
+  "negative_review_count": 5,
+  "pending_reply_count": 5,
+  "status": "analyzed"
+}

@@ -1,23 +1,68 @@
 [
   {
     "rank": 1,
-    "issue_name": "等待时间过长",
-    "issue_summary": "多条差评集中提到高峰期排队和出餐等待时间过长。",
-    "topic": "waiting_time",
-    "mention_count": 18,
+    "issue_name": "卫生状况堪忧",
+    "issue_summary": "多条评论反映店内卫生问题，包括异物出现、地面油腻、洗手间不洁，严重程度高。",
+    "topic": "hygiene",
+    "mention_count": 5,
     "severity_level": "high",
-    "priority_score": 0.92,
-    "suggested_action": "高峰期显示预计等待时间，并提前准备热门饮品。",
+    "priority_score": 0.95,
+    "suggested_action": "建立每2小时清洁巡检制度，重点覆盖就餐区和洗手间；加强对咖啡制作区域的操作规范检查。",
+    "evidence_count": 2,
+    "evidence_status": "sufficient",
     "evidence": [
       {
-        "review_id": "12",
-        "evidence_text": "等了太久，而且没有人解释情况。",
-        "evidence_reason": "直接反映等待时间和沟通不足。"
+        "review_id": "COFF08",
+        "evidence_text": "咖啡里有异物！太恶心了，卫生状况堪忧。",
+        "evidence_reason": "直接指出食品中出现了不该出现的异物，这是最严重的卫生投诉。"
       },
       {
-        "review_id": "39",
-        "evidence_text": "午高峰排队太久，拿到咖啡已经过了二十多分钟。",
-        "evidence_reason": "说明高峰期等待问题明显。"
+        "review_id": "COFF13",
+        "evidence_text": "地板油腻腻的，洗手间也不干净，卫生太差了。",
+        "evidence_reason": "明确指出两个卫生死角——地板和洗手间，反映日常清洁不到位。"
+      }
+    ]
+  },
+  {
+    "rank": 2,
+    "issue_name": "等待时间过长",
+    "issue_summary": "多位顾客抱怨出餐和排队等待时间过长，尤其在高峰期，部分顾客等待超过20分钟且无有效沟通。",
+    "topic": "waiting_time",
+    "mention_count": 8,
+    "severity_level": "high",
+    "priority_score": 0.92,
+    "suggested_action": "高峰期显示预计等待时间；提前准备热门饮品原料；在等待超过15分钟时主动向顾客说明情况并致歉。",
+    "evidence_count": 2,
+    "evidence_status": "sufficient",
+    "evidence": [
+      {
+        "review_id": "COFF04",
+        "evidence_text": "等了太久，而且没有人解释情况。",
+        "evidence_reason": "明确反映等待时间和沟通缺失两个问题。"
+      },
+      {
+        "review_id": "COFF12",
+        "evidence_text": "点了两杯等了半小时，说好的15分钟呢？",
+        "evidence_reason": "指出实际等待时间远超出承诺时间，反映期望管理问题。"
+      }
+    ]
+  },
+  {
+    "rank": 3,
+    "issue_name": "服务态度需改善",
+    "issue_summary": "部分顾客反馈服务员态度差，语气不好，影响整体用餐体验。",
+    "topic": "service",
+    "mention_count": 4,
+    "severity_level": "medium",
+    "priority_score": 0.78,
+    "suggested_action": "安排服务礼仪复训课程；建立差评关联的绩效反馈机制；每周例会复盘典型服务案例。",
+    "evidence_count": 1,
+    "evidence_status": "sufficient",
+    "evidence": [
+      {
+        "review_id": "COFF06",
+        "evidence_text": "太差了！咖啡居然是冷的，服务员态度还特别差！",
+        "evidence_reason": "明确批评服务员态度差，且同时涉及产品质量问题。"
       }
     ]
   }

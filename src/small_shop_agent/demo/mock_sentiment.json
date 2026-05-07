@@ -1,18 +1,106 @@
 [
   {
-    "review_id": "12",
+    "review_id": "COFF01",
+    "sentiment": "positive",
+    "severity": 1,
+    "sentiment_confidence": 0.97,
+    "is_negative_candidate": false,
+    "analysis_reason": "顾客明确表达环境好、咖啡新鲜，整体满意。"
+  },
+  {
+    "review_id": "COFF02",
+    "sentiment": "positive",
+    "severity": 1,
+    "sentiment_confidence": 0.92,
+    "is_negative_candidate": false,
+    "analysis_reason": "顾客对牛角包和拿铁表示满意，仅轻微抱怨价格。"
+  },
+  {
+    "review_id": "COFF03",
+    "sentiment": "neutral",
+    "severity": 2,
+    "sentiment_confidence": 0.88,
+    "is_negative_candidate": false,
+    "analysis_reason": "顾客评价中规中矩，无明显正面或负面倾向。"
+  },
+  {
+    "review_id": "COFF04",
     "sentiment": "negative",
-    "severity": 5,
+    "severity": 4,
     "sentiment_confidence": 0.94,
     "is_negative_candidate": true,
     "analysis_reason": "顾客明确表达等待时间过长且无人解释。"
   },
   {
-    "review_id": "39",
+    "review_id": "COFF05",
+    "sentiment": "positive",
+    "severity": 1,
+    "sentiment_confidence": 0.95,
+    "is_negative_candidate": false,
+    "analysis_reason": "顾客表示每月必来，对甜品和咖啡高度满意。"
+  },
+  {
+    "review_id": "COFF06",
+    "sentiment": "negative",
+    "severity": 5,
+    "sentiment_confidence": 0.96,
+    "is_negative_candidate": true,
+    "analysis_reason": "顾客强烈不满，批评咖啡品质和服务态度。"
+  },
+  {
+    "review_id": "COFF07",
+    "sentiment": "positive",
+    "severity": 1,
+    "sentiment_confidence": 0.90,
+    "is_negative_candidate": false,
+    "analysis_reason": "顾客称赞环境安静、WiFi快、充电方便。"
+  },
+  {
+    "review_id": "COFF08",
+    "sentiment": "negative",
+    "severity": 5,
+    "sentiment_confidence": 0.97,
+    "is_negative_candidate": true,
+    "analysis_reason": "顾客发现咖啡中有异物，表达强烈不满和卫生担忧。"
+  },
+  {
+    "review_id": "COFF09",
+    "sentiment": "positive",
+    "severity": 1,
+    "sentiment_confidence": 0.93,
+    "is_negative_candidate": false,
+    "analysis_reason": "顾客强烈推荐手冲咖啡，称赞咖啡师专业。"
+  },
+  {
+    "review_id": "COFF11",
+    "sentiment": "positive",
+    "severity": 1,
+    "sentiment_confidence": 0.89,
+    "is_negative_candidate": false,
+    "analysis_reason": "顾客称赞店员热情、冰美式好喝。"
+  },
+  {
+    "review_id": "COFF12",
     "sentiment": "negative",
     "severity": 4,
-    "sentiment_confidence": 0.89,
+    "sentiment_confidence": 0.91,
     "is_negative_candidate": true,
-    "analysis_reason": "顾客抱怨高峰期排队时间过长。"
+    "analysis_reason": "顾客抱怨等待时间远超承诺。"
+  },
+  {
+    "review_id": "COFF13",
+    "sentiment": "negative",
+    "severity": 5,
+    "sentiment_confidence": 0.95,
+    "is_negative_candidate": true,
+    "analysis_reason": "顾客指出地板和洗手间卫生问题。"
+  },
+  {
+    "review_id": "COFF14",
+    "sentiment": "neutral",
+    "severity": 2,
+    "sentiment_confidence": 0.84,
+    "is_negative_candidate": false,
+    "analysis_reason": "顾客认为价格偏高但认可环境，整体中性。"
   }
 ]

@@ -1,16 +1,93 @@
 [
   {
-    "review_id": "12",
+    "review_id": "COFF01",
+    "topics": ["environment", "product"],
+    "primary_topic": "environment",
+    "topic_confidence": 0.95,
+    "needs_review": false
+  },
+  {
+    "review_id": "COFF02",
+    "topics": ["product", "price"],
+    "primary_topic": "product",
+    "topic_confidence": 0.90,
+    "needs_review": false
+  },
+  {
+    "review_id": "COFF03",
+    "topics": ["product"],
+    "primary_topic": "product",
+    "topic_confidence": 0.85,
+    "needs_review": false
+  },
+  {
+    "review_id": "COFF04",
     "topics": ["waiting_time", "service"],
     "primary_topic": "waiting_time",
+    "topic_confidence": 0.92,
+    "needs_review": false
+  },
+  {
+    "review_id": "COFF05",
+    "topics": ["product", "environment"],
+    "primary_topic": "product",
+    "topic_confidence": 0.88,
+    "needs_review": false
+  },
+  {
+    "review_id": "COFF06",
+    "topics": ["service", "product"],
+    "primary_topic": "service",
     "topic_confidence": 0.91,
     "needs_review": false
   },
   {
-    "review_id": "39",
+    "review_id": "COFF07",
+    "topics": ["environment"],
+    "primary_topic": "environment",
+    "topic_confidence": 0.89,
+    "needs_review": false
+  },
+  {
+    "review_id": "COFF08",
+    "topics": ["hygiene"],
+    "primary_topic": "hygiene",
+    "topic_confidence": 0.93,
+    "needs_review": true
+  },
+  {
+    "review_id": "COFF09",
+    "topics": ["product"],
+    "primary_topic": "product",
+    "topic_confidence": 0.87,
+    "needs_review": false
+  },
+  {
+    "review_id": "COFF11",
+    "topics": ["service"],
+    "primary_topic": "service",
+    "topic_confidence": 0.86,
+    "needs_review": false
+  },
+  {
+    "review_id": "COFF12",
     "topics": ["waiting_time"],
     "primary_topic": "waiting_time",
-    "topic_confidence": 0.88,
+    "topic_confidence": 0.90,
+    "needs_review": false
+  },
+  {
+    "review_id": "COFF13",
+    "topics": ["hygiene", "environment"],
+    "primary_topic": "hygiene",
+    "topic_confidence": 0.94,
+    "needs_review": true
+  },
+  {
+    "review_id": "COFF14",
+    "topics": ["price", "environment"],
+    "primary_topic": "price",
+    "topic_confidence": 0.83,
     "needs_review": false
   }
 ]
