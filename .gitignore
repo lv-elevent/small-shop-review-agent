@@ -1,0 +1,50 @@
+﻿# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# Local database
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+
+# Generated data folders
+data/uploads/
+data/processed/
+data/exports/
+
+# Streamlit secrets
+.streamlit/secrets.toml
+
+# Claude Code local permissions/settings
+.claude/settings.local.json
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Build artifacts
+dist/
+build/
+*.egg-info/

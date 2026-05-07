@@ -1,0 +1,11 @@
+[
+  {
+    "review_id": "12",
+    "original_review": "等了太久，而且没有人解释情况。",
+    "draft_text": "您好，非常抱歉这次让您等待过久，也感谢您指出沟通不足的问题。我们正在优化高峰期人手安排，并提醒店员在等待时间较长时主动说明情况。希望下次能为您带来更好的体验。",
+    "safety_status": "pass",
+    "risk_types": [],
+    "safety_reason": "回复语气克制，没有攻击、虚假承诺或编造事实。",
+    "approval_status": "pending"
+  }
+]

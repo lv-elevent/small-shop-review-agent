@@ -1,0 +1,18 @@
+[
+  {
+    "review_id": "12",
+    "sentiment": "negative",
+    "severity": 5,
+    "sentiment_confidence": 0.94,
+    "is_negative_candidate": true,
+    "analysis_reason": "顾客明确表达等待时间过长且无人解释。"
+  },
+  {
+    "review_id": "39",
+    "sentiment": "negative",
+    "severity": 4,
+    "sentiment_confidence": 0.89,
+    "is_negative_candidate": true,
+    "analysis_reason": "顾客抱怨高峰期排队时间过长。"
+  }
+]

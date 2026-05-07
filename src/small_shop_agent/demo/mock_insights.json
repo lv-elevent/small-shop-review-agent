@@ -1,0 +1,24 @@
+[
+  {
+    "rank": 1,
+    "issue_name": "等待时间过长",
+    "issue_summary": "多条差评集中提到高峰期排队和出餐等待时间过长。",
+    "topic": "waiting_time",
+    "mention_count": 18,
+    "severity_level": "high",
+    "priority_score": 0.92,
+    "suggested_action": "高峰期显示预计等待时间，并提前准备热门饮品。",
+    "evidence": [
+      {
+        "review_id": "12",
+        "evidence_text": "等了太久，而且没有人解释情况。",
+        "evidence_reason": "直接反映等待时间和沟通不足。"
+      },
+      {
+        "review_id": "39",
+        "evidence_text": "午高峰排队太久，拿到咖啡已经过了二十多分钟。",
+        "evidence_reason": "说明高峰期等待问题明显。"
+      }
+    ]
+  }
+]

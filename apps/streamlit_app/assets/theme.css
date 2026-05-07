@@ -1,0 +1,153 @@
+/* Global background & font */
+body, .stApp {
+    background-color: #FAFBF7 !important;
+    font-family: 'Helvetica', sans-serif !important;
+    color: #4A3728 !important;
+}
+
+/* Sidebar */
+section[data-testid="stSidebar"] {
+    background-color: #2D2420 !important;
+    padding-top: 12px !important;
+}
+section[data-testid="stSidebar"] * {
+    color: #D4C4B0 !important;
+}
+section[data-testid="stSidebar"] button {
+    background: transparent !important;
+    border: none !important;
+    text-align: left !important;
+    font-size: 0.94rem !important;
+    font-weight: 500 !important;
+    color: #C4B8A8 !important;
+    padding: 10px 16px !important;
+    border-radius: 10px !important;
+    width: 100% !important;
+    margin: 2px 0 !important;
+    transition: all 0.2s;
+}
+section[data-testid="stSidebar"] button:hover {
+    background: rgba(255,255,255,0.08) !important;
+    color: #FFF !important;
+    transform: translateX(2px);
+}
+section[data-testid="stSidebar"] button[kind="primary"] {
+    background: rgba(255,255,255,0.12) !important;
+    color: #FFF !important;
+    font-weight: 600 !important;
+}
+
+/* Sidebar Title */
+.sidebar .css-1d391kg div[role="heading"] {
+    font-size: 1.08rem !important;
+    font-weight: 700 !important;
+    color: #FFFFFF !important;
+    letter-spacing: 0.3px !important;
+}
+
+/* Upload Box */
+section[data-testid="stFileUploader"] {
+    border: 2px dashed #D4C4B0 !important;
+    border-radius: 14px !important;
+    background-color: #FFFCF8 !important;
+    padding: 40px 20px !important;
+    text-align: center !important;
+    transition: border-color 0.25s, background 0.25s !important;
+}
+section[data-testid="stFileUploader"]:hover {
+    border-color: #A08060 !important;
+    background-color: #FFF9F0 !important;
+}
+
+/* Upload Icon & text alignment */
+section[data-testid="stFileUploader"] > div {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Buttons */
+div[data-testid="stButton"] > button[kind="primary"] {
+    background: linear-gradient(135deg, #6B4C3B 0%, #5C3D2E 100%) !important;
+    border: none !important;
+    border-radius: 10px !important;
+    color: #FFFFFF !important;
+    font-weight: 600 !important;
+    font-size: 1rem !important;
+    padding: 12px 32px !important;
+    letter-spacing: 0.3px !important;
+    transition: all 0.25s;
+}
+div[data-testid="stButton"] > button[kind="primary"]:hover {
+    background: linear-gradient(135deg, #7D5A47 0%, #6B4C3B 100%) !important;
+    box-shadow: 0 3px 10px rgba(74,55,40,0.25) !important;
+    transform: translateY(-1px);
+}
+
+/* Metric cards */
+.metric-card, .right-card {
+    background-color: #FFFFFF !important;
+    border: 1px solid #E8E0D5 !important;
+    border-radius: 14px !important;
+    padding: 18px 16px !important;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08) !important;
+    margin-bottom: 16px !important;
+    transition: transform 0.2s;
+}
+.metric-card:hover, .right-card:hover {
+    transform: translateY(-2px);
+}
+
+/* Metric card text */
+.metric-card .label {
+    font-size: 0.78rem !important;
+    color: #8B7355 !important;
+    font-weight: 500 !important;
+    margin-bottom: 6px !important;
+    letter-spacing: 0.3px !important;
+}
+.metric-card .value {
+    font-size: 1.85rem !important;
+    font-weight: 700 !important;
+    color: #4A3728 !important;
+    line-height: 1.2 !important;
+}
+
+/* Section titles */
+.section-title {
+    font-size: 1rem !important;
+    font-weight: 700 !important;
+    color: #4A3728 !important;
+    margin-bottom: 12px !important;
+}
+
+/* Divider */
+hr.custom-hr {
+    border: none !important;
+    border-top: 1px solid #E8E0D5 !important;
+    margin: 22px 0 !important;
+}
+
+/* Right panel table */
+div[data-testid="stTable"] th {
+    background-color: #F5F0E8 !important;
+    color: #4A3728 !important;
+    font-weight: 600 !important;
+    font-size: 0.8rem !important;
+}
+div[data-testid="stTable"] td {
+    font-size: 0.82rem !important;
+}
+
+/* CSV download button */
+div[data-testid="stDownloadButton"] button {
+    border-radius: 8px !important;
+    background-color: #FFF8F5 !important;
+    color: #4A3728 !important;
+    font-weight: 600 !important;
+    padding: 10px 16px !important;
+}
+div[data-testid="stDownloadButton"] button:hover {
+    background-color: #FFF3EB !important;
+}

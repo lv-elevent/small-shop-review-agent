@@ -1,0 +1,23 @@
+[
+  {
+    "step_name": "input_validation",
+    "input_summary": "上传 sample_reviews.csv",
+    "output_summary": "128 条有效评论，4 条重复，2 条空评论跳过",
+    "status": "passed",
+    "latency_ms": 120
+  },
+  {
+    "step_name": "classification",
+    "input_summary": "128 条有效评论",
+    "output_summary": "完成主题分类",
+    "status": "passed",
+    "latency_ms": 8400
+  },
+  {
+    "step_name": "human_approval",
+    "input_summary": "8 条待审批回复",
+    "output_summary": "3 条已批准，5 条待处理",
+    "status": "pending",
+    "latency_ms": null
+  }
+]

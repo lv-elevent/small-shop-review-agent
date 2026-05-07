@@ -1,0 +1,10 @@
+mcp_name: reviews
+description: "Capability package for review parsing, validation, reply draft generation"
+version: "0.1"
+skills:
+  - parse_csv
+  - validate_data
+  - generate_draft
+tools:
+  - csv_stats
+  - clean_temp
