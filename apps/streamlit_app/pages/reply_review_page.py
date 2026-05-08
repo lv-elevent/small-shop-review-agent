@@ -1,5 +1,6 @@
 """
-Reply Review Page — 回复审核：左队列右详情，参照 UI mockup (Reply Review页.png)
+Reply Review Page — 回复审核：左队列右详情
+接入 ReplyService 真实审批（approve / edit / reject）
 """
 
 from __future__ import annotations
@@ -15,6 +16,11 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from apps.streamlit_app.components.sidebar import render_sidebar
+from small_shop_agent.services.reply_service import ReplyService
+from small_shop_agent.storage.repositories.reply_repository import ReplyRepository
+from small_shop_agent.storage.database import execute_migrations, get_connection
+
+execute_migrations()
 
 # ── Page config ──────────────────────────────────────────────────────────
 st.set_page_config(
@@ -161,9 +167,7 @@ st.markdown("""
         font-size: 0.78rem;
     }
 
-    /* ── Action button overrides ──
-       Green: approve button, selected filter, selected queue item
-       Red: blocked items (via safety bar + badge, not buttons) */
+    /* ── Action button overrides ── */
     button[kind="primary"],
     button[data-testid="baseButton-primary"] {
         background: #27AE60 !important;
@@ -187,73 +191,70 @@ st.markdown("""
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Demo Data
+# Data Loading
 # ═══════════════════════════════════════════════════════════════════════════
 
-def _init_demo_data() -> None:
-    if "reply_review_init" in st.session_state:
-        return
+def _load_reply_review_data(batch_id: str) -> dict:
+    """Load all drafts + review metadata for the Reply Review page."""
+    rpr = ReplyRepository()
+    drafts = rpr.list_drafts(batch_id)
 
-    drafts = [
-        {"draft_id":"DR001","review_id":"D002","review_text":"等了快40分钟才上菜，太慢了","rating":1,
-         "customer_name":"用户A","platform":"美团","issue":"出餐速度慢","severity":"high",
-         "reply_draft":"亲爱的顾客，非常抱歉让您久等了。我们深知等餐时间过长会严重影响用餐体验。我们已经注意到高峰期出餐速度的问题，正在优化厨房流程和增加备餐人手。希望您能再给我们一次机会，下次来店我们将为您优先服务。",
-         "safety_status":"pass","safety_issues":[],"approval_status":"pending","edit_text":""},
-        {"draft_id":"DR002","review_id":"D003","review_text":"服务员态度冷淡，爱答不理","rating":2,
-         "customer_name":"用户B","platform":"大众点评","issue":"服务态度差","severity":"high",
-         "reply_draft":"感谢您的反馈，我们非常重视您的意见。关于服务员态度的问题，我们已经进行了内部调查和批评教育。我们将加强员工服务培训，确保每位顾客都能感受到温暖和尊重。再次为不佳的体验向您道歉。",
-         "safety_status":"pass","safety_issues":[],"approval_status":"pending","edit_text":""},
-        {"draft_id":"DR003","review_id":"D005","review_text":"桌面油腻腻的，卫生堪忧","rating":1,
-         "customer_name":"用户C","platform":"美团","issue":"环境卫生问题","severity":"medium",
-         "reply_draft":"非常抱歉给您带来不好的体验。我们已经立即安排了对用餐区域的深度清洁，并制定了每2小时的巡检制度。卫生是我们最基本的责任，感谢您的监督。",
-         "safety_status":"pass","safety_issues":[],"approval_status":"pending","edit_text":""},
-        {"draft_id":"DR004","review_id":"D007","review_text":"等了20分钟被告知卖完了","rating":1,
-         "customer_name":"用户D","platform":"小红书","issue":"出餐速度慢","severity":"high",
-         "reply_draft":"非常抱歉给您带来不好的体验！我们已经改进了库存管理和菜单提示系统，确保不会再出现类似情况。您下次光临时，我们愿意为您免费提供一份甜品作为补偿。",
-         "safety_status":"rewrite_required","safety_issues":["避免承诺免费补偿 — 建议改为'我们将为您准备一份小惊喜'"],
-         "approval_status":"pending","edit_text":""},
-        {"draft_id":"DR005","review_id":"D009","review_text":"服务员上错菜还不承认","rating":1,
-         "customer_name":"用户E","platform":"大众点评","issue":"服务态度差","severity":"high",
-         "reply_draft":"感谢指出问题，我们已经对当事员工进行了严肃批评并处以罚款。我们会加强员工责任心培训，杜绝此类事件再次发生。欢迎您再次光临监督。",
-         "safety_status":"blocked",
-         "safety_issues":["禁止公开声明处罚员工 — 违规透露内部人事信息","建议改为'我们已内部严肃处理，将加强员工培训'"],
-         "approval_status":"pending","edit_text":""},
-        {"draft_id":"DR006","review_id":"D011","review_text":"音乐太大声，影响聊天","rating":2,
-         "customer_name":"用户F","platform":"美团","issue":"环境卫生问题","severity":"medium",
-         "reply_draft":"谢谢您的建议！我们已经调整了店内背景音乐的音量，并在不同时段设置了不同的音量标准。希望下次您来的时候能享受到更舒适的氛围。",
-         "safety_status":"pass","safety_issues":[],"approval_status":"pending","edit_text":""},
-        {"draft_id":"DR007","review_id":"D012","review_text":"周末高峰期完全没人管排队","rating":1,
-         "customer_name":"用户G","platform":"小红书","issue":"出餐速度慢","severity":"high",
-         "reply_draft":"非常抱歉！我们已经意识到周末高峰期的排队管理问题，正在引入取号系统和等位区优化方案。预计下周末前完成改进。",
-         "safety_status":"pass","safety_issues":[],"approval_status":"pending","edit_text":""},
-        {"draft_id":"DR008","review_id":"D014","review_text":"卫生间不太干净","rating":2,
-         "customer_name":"用户H","platform":"美团","issue":"环境卫生问题","severity":"medium",
-         "reply_draft":"感谢您的提醒，我们已经立即安排保洁人员对卫生间进行了彻底清洁，并增加了清洁频次。卫生问题我们绝不姑息，欢迎您随时监督。",
-         "safety_status":"pass","safety_issues":[],"approval_status":"pending","edit_text":""},
-        {"draft_id":"DR009","review_id":"D017","review_text":"结账时多收了一杯咖啡的钱","rating":1,
-         "customer_name":"用户I","platform":"大众点评","issue":"服务态度差","severity":"high",
-         "reply_draft":"非常抱歉出现这样的错误！我们已经核查了当天的账单并进行了退款处理。针对收银流程，我们增加了双人复核制度。感谢您的理解。",
-         "safety_status":"pass","safety_issues":[],"approval_status":"pending","edit_text":""},
-        {"draft_id":"DR010","review_id":"D020","review_text":"收银员边玩手机边结账","rating":2,
-         "customer_name":"用户J","platform":"美团","issue":"服务态度差","severity":"medium",
-         "reply_draft":"感谢您的反馈。我们已对当事员工进行了批评教育，并重申了工作期间禁止使用手机的规定。我们将通过定期巡查确保服务规范。",
-         "safety_status":"pass","safety_issues":[],"approval_status":"pending","edit_text":""},
-        {"draft_id":"DR011","review_id":"D025","review_text":"高峰期只有一个人做咖啡","rating":1,
-         "customer_name":"用户K","platform":"小红书","issue":"出餐速度慢","severity":"high",
-         "reply_draft":"感谢您的反馈，我们已经调整了员工排班方案，确保高峰期至少有2名咖啡师在岗。同时我们也在优化出餐流程以提高效率。",
-         "safety_status":"pass","safety_issues":[],"approval_status":"pending","edit_text":""},
-        {"draft_id":"DR012","review_id":"D031","review_text":"冰美式寡淡无味","rating":2,
-         "customer_name":"用户L","platform":"美团","issue":"口味不稳定","severity":"medium",
-         "reply_draft":"感谢您的反馈，我们已经检查了咖啡机的萃取参数和咖啡豆的新鲜度。如果方便的话，下次来店时请告知我们的咖啡师您的口味偏好，我们很乐意为您调整浓度。",
-         "safety_status":"pass","safety_issues":[],"approval_status":"pending","edit_text":""},
-    ]
+    if not drafts:
+        return {"drafts": [], "pending_count": 0, "blocked_count": 0, "rewrite_count": 0}
 
+    review_ids = list({d["review_id"] for d in drafts})
+
+    # Batch-load review metadata
+    with get_connection() as conn:
+        placeholders = ",".join(["?" for _ in review_ids])
+        reviews = conn.execute(
+            f"SELECT review_id, rating, platform FROM reviews "
+            f"WHERE batch_id = ? AND review_id IN ({placeholders})",
+            [batch_id] + review_ids,
+        ).fetchall()
+        review_map = {r["review_id"]: dict(r) for r in reviews}
+
+        analysis_rows = conn.execute(
+            f"SELECT review_id, severity, primary_topic FROM review_analysis "
+            f"WHERE batch_id = ? AND review_id IN ({placeholders})",
+            [batch_id] + review_ids,
+        ).fetchall()
+        analysis_map = {a["review_id"]: dict(a) for a in analysis_rows}
+
+    # Enrich drafts
     for d in drafts:
-        d["edit_text"] = d["reply_draft"]
+        rm = review_map.get(d["review_id"], {})
+        am = analysis_map.get(d["review_id"], {})
+        d["rating"] = rm.get("rating", "")
+        d["platform"] = rm.get("platform", "—")
+        sev_num = am.get("severity", 2)
+        if sev_num >= 4:
+            d["severity"] = "high"
+        elif sev_num >= 3:
+            d["severity"] = "medium"
+        else:
+            d["severity"] = "low"
+        d["issue"] = am.get("primary_topic", "—")
+        # Ensure risk_types is a list
+        if isinstance(d.get("risk_types"), str):
+            import json
+            try:
+                d["risk_types"] = json.loads(d["risk_types"])
+            except Exception:
+                d["risk_types"] = []
+        if d.get("risk_types") is None:
+            d["risk_types"] = []
 
-    st.session_state.reply_drafts = drafts
-    st.session_state.reply_selected_idx = 0
-    st.session_state.reply_review_init = True
+    pending_count = sum(1 for d in drafts if d["approval_status"] == "pending")
+    blocked_count = sum(1 for d in drafts if d["safety_status"] == "blocked" and d["approval_status"] == "pending")
+    rewrite_count = sum(1 for d in drafts if d["safety_status"] == "rewrite_required" and d["approval_status"] == "pending")
+
+    return {
+        "drafts": drafts,
+        "pending_count": pending_count,
+        "blocked_count": blocked_count,
+        "rewrite_count": rewrite_count,
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -299,10 +300,11 @@ def _apply_filter(drafts: list[dict], filter_key: str) -> list[dict]:
         return [d for d in drafts if d["safety_status"] == "blocked" and d["approval_status"] == "pending"]
     elif filter_key == "processed":
         return [d for d in drafts if d["approval_status"] != "pending"]
+    # "all" — sort by priority
     priority = {"pending": 0, "rewrite_required": 1, "blocked": 2}
     return sorted(drafts, key=lambda d: (
         priority.get(
-            "pending" if d["approval_status"] == "pending" and d["safety_status"] not in ("rewrite_required","blocked")
+            "pending" if d["approval_status"] == "pending" and d["safety_status"] not in ("rewrite_required", "blocked")
             else "rewrite_required" if d["safety_status"] == "rewrite_required" and d["approval_status"] == "pending"
             else "blocked" if d["safety_status"] == "blocked"
             else "processed", 99
@@ -311,7 +313,7 @@ def _apply_filter(drafts: list[dict], filter_key: str) -> list[dict]:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Pagination — compact, right-aligned, bottom only
+# Pagination
 # ═══════════════════════════════════════════════════════════════════════════
 
 def _render_pagination(total: int, page_size: int, page_key: str) -> int:
@@ -326,46 +328,34 @@ def _render_pagination(total: int, page_size: int, page_key: str) -> int:
     if total_pages <= 1:
         return 0
 
-    # Visual pagination HTML
     parts: list[str] = []
 
-    # Prev arrow
     prev_cls = "pgn-arrow disabled" if cur == 0 else "pgn-arrow"
     parts.append(f'<span class="{prev_cls}">‹</span>')
 
-    # Page numbers
     if total_pages <= 7:
         for p in range(total_pages):
             cls = "pgn-item active" if p == cur else "pgn-item"
             parts.append(f'<span class="{cls}">{p + 1}</span>')
     else:
-        # First page
         cls = "pgn-item active" if cur == 0 else "pgn-item"
         parts.append(f'<span class="{cls}">1</span>')
-
         if cur > 2:
             parts.append('<span class="pgn-ellipsis">…</span>')
-
-        # Pages around current
         for p in range(max(1, cur - 1), min(total_pages - 1, cur + 2)):
             cls = "pgn-item active" if p == cur else "pgn-item"
             parts.append(f'<span class="{cls}">{p + 1}</span>')
-
         if cur < total_pages - 3:
             parts.append('<span class="pgn-ellipsis">…</span>')
-
-        # Last page
         cls = "pgn-item active" if cur == total_pages - 1 else "pgn-item"
         parts.append(f'<span class="{cls}">{total_pages}</span>')
 
-    # Next arrow
     next_cls = "pgn-arrow disabled" if cur >= total_pages - 1 else "pgn-arrow"
     parts.append(f'<span class="{next_cls}">›</span>')
 
     html = '<div class="pgn-wrap">' + "".join(parts) + "</div>"
     st.markdown(html, unsafe_allow_html=True)
 
-    # Functional prev/next buttons (compact, right-aligned)
     bc_empty, bc_prev, bc_info, bc_next = st.columns([3, 1, 2, 1])
     with bc_prev:
         if st.button("◀", key=f"{page_key}_prev", disabled=(cur == 0),
@@ -394,19 +384,47 @@ def _render_pagination(total: int, page_size: int, page_key: str) -> int:
 # ═══════════════════════════════════════════════════════════════════════════
 
 def main() -> None:
-    _init_demo_data()
     st.session_state.nav_selection = "回复审核"
     render_sidebar()
 
-    drafts: list[dict] = st.session_state.reply_drafts
+    reply_svc = ReplyService()
+    batch_id = st.session_state.get("current_batch_id")
+
+    # ── No batch ──
+    if not batch_id:
+        st.markdown("""
+        <div style="text-align:center;padding-top:120px;color:#A09080;">
+            <p style="font-size:1.1rem;">👈 请先在 <strong>「上传评论」</strong> 页面中上传 CSV 或开启 Demo Mode 并运行分析</p>
+            <p style="font-size:0.82rem;">分析完成后，回复草稿将在此页面等待审核</p>
+        </div>
+        """, unsafe_allow_html=True)
+        return
+
+    # ── Load data ──
+    try:
+        data = _load_reply_review_data(batch_id)
+    except Exception as e:
+        st.error(f"加载数据失败：{e}")
+        return
+
+    drafts: list[dict] = data["drafts"]
+
+    # ── Empty state ──
+    if not drafts:
+        st.markdown("""
+        <div style="text-align:center;padding-top:80px;color:#A09080;">
+            <p style="font-size:1.1rem;">📭 暂无回复草稿</p>
+            <p style="font-size:0.82rem;">该批次可能尚未完成分析，或所有草稿已处理完毕</p>
+        </div>
+        """, unsafe_allow_html=True)
+        return
 
     if "reply_selected_idx" not in st.session_state:
         st.session_state.reply_selected_idx = 0
 
-    # ── Stats ──
-    pending_n = sum(1 for d in drafts if d["approval_status"] == "pending")
-    blocked_n = sum(1 for d in drafts if d["safety_status"] == "blocked" and d["approval_status"] == "pending")
-    rewrite_n = sum(1 for d in drafts if d["safety_status"] == "rewrite_required" and d["approval_status"] == "pending")
+    pending_n = data["pending_count"]
+    blocked_n = data["blocked_count"]
+    rewrite_n = data["rewrite_count"]
 
     # ── Title bar ──
     st.markdown(f"""<div style="margin-bottom:4px;">
@@ -470,11 +488,11 @@ font-size:0.82rem;padding:2px 12px;border-radius:12px;margin-left:8px;">
         st.session_state.reply_selected_idx = 0
 
     # ═══════════════════════════════════════════════════════
-    # Main two-column layout
+    # Two-column layout
     # ═══════════════════════════════════════════════════════
     left, right = st.columns([5, 7], gap="medium")
 
-    # ══════════════ LEFT: 待处理队列 ══════════════
+    # ═══════ LEFT: queue ═══════
     with left:
         st.markdown(
             f'<p style="font-weight:700;color:#4A3728;font-size:0.95rem;margin:0 0 10px 0;">'
@@ -499,9 +517,9 @@ font-size:0.82rem;padding:2px 12px;border-radius:12px;margin-left:8px;">
 
                 is_selected = i == sel_idx
                 row_class = "qi-row selected" if is_selected else "qi-row"
-                snippet = d["review_text"][:30] + ("…" if len(d["review_text"]) > 30 else "")
+                raw_review = d.get("original_review", "") or ""
+                snippet = raw_review[:30] + ("…" if len(raw_review) > 30 else "")
 
-                # Row: display (90%) + compact select button (10%)
                 rc1, rc2 = st.columns([9, 1], gap="small")
                 with rc1:
                     qi_md = f"""<div class="{row_class}">
@@ -513,19 +531,18 @@ font-size:0.82rem;padding:2px 12px;border-radius:12px;margin-left:8px;">
                     st.markdown(qi_md, unsafe_allow_html=True)
                 with rc2:
                     if is_selected:
-                        st.button("✓", key=f"sel_{d['draft_id']}",
+                        st.button("✓", key=f"sel_{d['id']}",
                                   use_container_width=True, type="primary")
                     else:
-                        if st.button("›", key=f"sel_{d['draft_id']}",
+                        if st.button("›", key=f"sel_{d['id']}",
                                     use_container_width=True, type="secondary"):
                             st.session_state.reply_selected_idx = i
                             st.rerun()
 
-            # Pagination at bottom of queue
             st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
             _render_pagination(len(filtered), page_size, queue_key)
 
-    # ══════════════ RIGHT: AI 回复草稿 ══════════════
+    # ═══════ RIGHT: detail + actions ═══════
     with right:
         if not page_items:
             st.markdown("""
@@ -539,9 +556,9 @@ font-size:0.82rem;padding:2px 12px;border-radius:12px;margin-left:8px;">
             safety = d.get("safety_status", "pass")
             status = d.get("approval_status", "pending")
             is_pending = status == "pending"
-            key_prefix = f"draft_{d['draft_id']}"
+            draft_id = d["id"]
+            key_prefix = f"draft_{draft_id}"
 
-            # ── Render the fixed right panel ──
             sc_cfg = {
                 "pass": ("#27AE60", "#E8F8F0", "🛡️ 安全检查通过"),
                 "rewrite_required": ("#E67E22", "#FEF5E7", "🛡️ 安全检查：建议修改"),
@@ -549,12 +566,12 @@ font-size:0.82rem;padding:2px 12px;border-radius:12px;margin-left:8px;">
             }
             sc_c, sc_bg, sc_label = sc_cfg.get(safety, ("#8B7355", "#F5F0E8", safety))
 
-            # Build safety issues HTML inline
             issues_html = ""
-            for issue in d.get("safety_issues", []):
+            for issue in d.get("risk_types", []):
                 issues_html += f'<div class="rp-safety-issue">· {issue}</div>'
 
-            # Panel header + review + safety (single markdown call to keep DOM intact)
+            original_text = d.get("original_review", "") or ""
+
             st.markdown(f"""<div class="rp-box">
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
 <div>
@@ -567,12 +584,11 @@ font-size:0.82rem;padding:2px 12px;border-radius:12px;margin-left:8px;">
 </div>
 </div>
 <div class="rp-label">📝 原始评论</div>
-<div class="rp-review-box">{d['review_text']}</div>
+<div class="rp-review-box">{original_text}</div>
 <div style="margin-top:6px;">
-<span class="rp-meta">👤 {d['customer_name']}</span>
-<span class="rp-meta" style="margin-left:12px;">📱 {d['platform']}</span>
-<span class="rp-meta" style="margin-left:12px;">⭐ {d['rating']}/5</span>
-<span class="rp-meta" style="margin-left:12px;">🏷 {d['issue']}</span>
+<span class="rp-meta">📱 {d.get('platform', '—')}</span>
+<span class="rp-meta" style="margin-left:12px;">⭐ {d.get('rating', '—')}/5</span>
+<span class="rp-meta" style="margin-left:12px;">🏷 {d.get('issue', '—')}</span>
 </div>
 <div style="margin-top:14px;">
 <div class="rp-safety-bar" style="background:{sc_bg};color:{sc_c};">{sc_label}</div>
@@ -587,22 +603,22 @@ font-size:0.82rem;padding:2px 12px;border-radius:12px;margin-left:8px;">
                     '✏️ 编辑回复内容</p>',
                     unsafe_allow_html=True,
                 )
+                current_text = d.get("edited_text") or d.get("draft_text", "")
                 edited = st.text_area(
                     "编辑回复",
-                    value=d["edit_text"],
+                    value=current_text,
                     height=120,
                     key=f"{key_prefix}_editor",
                     label_visibility="collapsed",
                 )
-                if edited != d["edit_text"]:
-                    d["edit_text"] = edited
             else:
                 st.markdown(
                     f'<div style="background:#F8F5F0;border-radius:8px;padding:14px;'
                     f'font-size:0.86rem;color:#4A3728;line-height:1.7;margin-top:14px;">'
-                    f'{d["reply_draft"]}</div>',
+                    f'{d.get("final_text") or d.get("draft_text", "")}</div>',
                     unsafe_allow_html=True,
                 )
+                edited = ""
 
             # ── Action buttons ──
             st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
@@ -614,30 +630,35 @@ font-size:0.82rem;padding:2px 12px;border-radius:12px;margin-left:8px;">
                 bc1, bc2, bc3, bc4 = st.columns([2, 2, 2, 3])
 
                 with bc1:
-                    approve_clicked = st.button(
+                    if st.button(
                         "✅ 批准发布",
                         key=f"{key_prefix}_approve",
                         use_container_width=True,
                         type="primary",
                         disabled=blocked_safety,
-                    )
-                    if approve_clicked:
-                        d["approval_status"] = "approved"
-                        d["reply_draft"] = d["edit_text"]
-                        st.toast("✅ 已批准", icon="✅")
-                        st.rerun()
+                    ):
+                        result = reply_svc.approve_draft(draft_id)
+                        if result["success"]:
+                            st.toast("✅ 已批准", icon="✅")
+                            st.rerun()
+                        else:
+                            st.toast(f"❌ 批准失败：{result.get('error', '')}", icon="❌")
 
                 with bc2:
-                    save_clicked = st.button(
+                    if st.button(
                         "📝 保存修改",
                         key=f"{key_prefix}_save",
                         use_container_width=True,
-                    )
-                    if save_clicked:
-                        d["approval_status"] = "edited"
-                        d["reply_draft"] = d["edit_text"]
-                        st.toast("📝 已保存", icon="📝")
-                        st.rerun()
+                    ):
+                        if not edited.strip():
+                            st.toast("❌ 回复内容不能为空", icon="❌")
+                        else:
+                            result = reply_svc.edit_draft(draft_id, edited.strip())
+                            if result["success"]:
+                                st.toast("📝 已保存", icon="📝")
+                                st.rerun()
+                            else:
+                                st.toast(f"❌ 保存失败：{result.get('error', '')}", icon="❌")
 
                 with bc3:
                     with st.popover("✗ 驳回", use_container_width=True):
@@ -647,10 +668,12 @@ font-size:0.82rem;padding:2px 12px;border-radius:12px;margin-left:8px;">
                         )
                         if st.button("确认驳回", key=f"{key_prefix}_reject_confirm",
                                     disabled=not reason.strip()):
-                            d["approval_status"] = "rejected"
-                            d["reject_reason"] = reason.strip()
-                            st.toast("✗ 已驳回", icon="✗")
-                            st.rerun()
+                            result = reply_svc.reject_draft(draft_id, reason.strip())
+                            if result["success"]:
+                                st.toast("✗ 已驳回", icon="✗")
+                                st.rerun()
+                            else:
+                                st.toast(f"❌ 驳回失败：{result.get('error', '')}", icon="❌")
 
                 with bc4:
                     if blocked_safety:
