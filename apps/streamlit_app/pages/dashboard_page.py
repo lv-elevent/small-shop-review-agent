@@ -194,6 +194,13 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
+_EVIDENCE_STATUS_CN: dict[str, str] = {
+    "sufficient": "证据充分",
+    "insufficient": "证据不足",
+    "weak": "证据较弱",
+}
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Data Loading
 # ═══════════════════════════════════════════════════════════════════════════
@@ -315,7 +322,7 @@ def _render_issue_card(issue: dict) -> None:
 <div class="issue-title">{issue['issue_name']}</div>
 <div class="issue-stats">
 <span>提及 <b>{issue['mention_count']}</b> 次</span>
-<span>证据 <b>{issue['evidence_count']}</b> 条 · {issue.get('evidence_status', '—')}</span>
+<span>证据 <b>{issue['evidence_count']}</b> 条 · {_EVIDENCE_STATUS_CN.get(issue.get('evidence_status', ''), issue.get('evidence_status', '—'))}</span>
 </div>
 <div class="evidence-list">关联评论：{evidence_html}</div>
 <span class="btn-suggestion">💡 {issue.get('suggested_action', '暂无建议')}</span>

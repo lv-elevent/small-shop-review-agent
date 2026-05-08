@@ -234,7 +234,7 @@ def _load_reply_review_data(batch_id: str) -> dict:
             d["severity"] = "medium"
         else:
             d["severity"] = "low"
-        d["issue"] = am.get("primary_topic", "—")
+        d["issue"] = _TOPIC_CN.get(am.get("primary_topic", ""), am.get("primary_topic", "—"))
         # Ensure risk_types is a list
         if isinstance(d.get("risk_types"), str):
             import json
@@ -255,6 +255,17 @@ def _load_reply_review_data(batch_id: str) -> dict:
         "blocked_count": blocked_count,
         "rewrite_count": rewrite_count,
     }
+
+
+_TOPIC_CN: dict[str, str] = {
+    "hygiene": "卫生",
+    "waiting_time": "等待时间",
+    "service": "服务",
+    "product": "产品",
+    "environment": "环境",
+    "price": "价格",
+    "other": "其他",
+}
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -661,19 +672,21 @@ font-size:0.82rem;padding:2px 12px;border-radius:12px;margin-left:8px;">
                                 st.toast(f"❌ 保存失败：{result.get('error', '')}", icon="❌")
 
                 with bc3:
-                    with st.popover("✗ 驳回", use_container_width=True):
+                    with st.popover("❌ 驳回", use_container_width=True):
                         reason = st.text_area(
                             "驳回原因", placeholder="请输入驳回原因…",
                             key=f"{key_prefix}_reason",
                         )
-                        if st.button("确认驳回", key=f"{key_prefix}_reject_confirm",
-                                    disabled=not reason.strip()):
-                            result = reply_svc.reject_draft(draft_id, reason.strip())
-                            if result["success"]:
-                                st.toast("✗ 已驳回", icon="✗")
-                                st.rerun()
+                        if st.button("确认驳回", key=f"{key_prefix}_reject_confirm"):
+                            if not reason.strip():
+                                st.toast("❌ 请输入驳回原因", icon="❌")
                             else:
-                                st.toast(f"❌ 驳回失败：{result.get('error', '')}", icon="❌")
+                                result = reply_svc.reject_draft(draft_id, reason.strip())
+                                if result["success"]:
+                                    st.toast("❌ 已驳回", icon="❌")
+                                    st.rerun()
+                                else:
+                                    st.toast(f"❌ 驳回失败：{result.get('error', '')}", icon="❌")
 
                 with bc4:
                     if blocked_safety:
