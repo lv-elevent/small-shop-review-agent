@@ -1,11 +1,11 @@
 """
-Trace & Eval Page — 追踪与评测：左追踪日志右评测摘要，参照 UI mockup (Trace&Eval页.png)
+Trace & Eval Page — 追踪与评测：左追踪日志右评测摘要
+接入 TraceService + EvalService 真实数据
 """
 
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timedelta
 from pathlib import Path
 
 import streamlit as st
@@ -16,6 +16,11 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from apps.streamlit_app.components.sidebar import render_sidebar
+from small_shop_agent.services.trace_service import TraceService
+from small_shop_agent.services.eval_service import EvalService
+from small_shop_agent.storage.database import execute_migrations
+
+execute_migrations()
 
 # ── Page config ──────────────────────────────────────────────────────────
 st.set_page_config(
@@ -164,95 +169,33 @@ st.markdown("""
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Demo Data
-# ═══════════════════════════════════════════════════════════════════════════
-
-def _init_demo_data() -> None:
-    if "trace_eval_init" in st.session_state:
-        return
-
-    now = datetime.now()
-    base = now - timedelta(minutes=15)
-
-    # Trace events — follows the workflow: upload → classify → sentiment → insight → reply → safety → approval
-    trace_events = [
-        {"time": base.strftime("%H:%M:%S"),
-         "step": "输入校验",
-         "status": "passed",
-         "detail": "48/48 条评论通过格式校验，0 条结构错误，编码自动识别为 UTF-8"},
-        {"time": (base + timedelta(seconds=8)).strftime("%H:%M:%S"),
-         "step": "Schema 约束",
-         "status": "passed",
-         "detail": "所有字段合法，review_id 唯一性检查通过，rating 范围 1-5 均合规"},
-        {"time": (base + timedelta(seconds=15)).strftime("%H:%M:%S"),
-         "step": "评论分类",
-         "status": "passed",
-         "detail": "48 条评论分类完成：口味 14 · 服务 12 · 出餐 9 · 环境 8 · 综合 5"},
-        {"time": (base + timedelta(seconds=22)).strftime("%H:%M:%S"),
-         "step": "情绪分析",
-         "status": "passed",
-         "detail": "正面 22 条 · 中性 7 条 · 负面 19 条，情绪置信度均值 0.87"},
-        {"time": (base + timedelta(seconds=35)).strftime("%H:%M:%S"),
-         "step": "三大问题聚合",
-         "status": "passed",
-         "detail": "识别 3 个主要问题：出餐速度慢 (9次) · 服务态度差 (7次) · 环境卫生 (5次)，证据链完整"},
-        {"time": (base + timedelta(seconds=48)).strftime("%H:%M:%S"),
-         "step": "回复草稿生成",
-         "status": "passed",
-         "detail": "19 条差评均已生成回复草稿，模板匹配率 94%，个性化调整率 73%"},
-        {"time": (base + timedelta(seconds=58)).strftime("%H:%M:%S"),
-         "step": "安全检查",
-         "status": "warning",
-         "detail": "17/19 条通过安全检查，1 条需修改 (承诺补偿)，1 条已拦截 (公开声明处罚员工)"},
-        {"time": (base + timedelta(seconds=65)).strftime("%H:%M:%S"),
-         "step": "证据绑定",
-         "status": "passed",
-         "detail": "19 条证据已关联至对应洞察，review_id → insight 映射完整"},
-        {"time": (base + timedelta(seconds=72)).strftime("%H:%M:%S"),
-         "step": "人工审批",
-         "status": "pending",
-         "detail": "12 条草稿待审核 · 5 条已批准 · 1 条已驳回 · 0 条自动发布"},
-        {"time": (base + timedelta(seconds=80)).strftime("%H:%M:%S"),
-         "step": "工作流完成",
-         "status": "passed",
-         "detail": "全流程耗时 95 秒，LLM 调用 52 次，重试 1 次 (安全检查)，fallback 0 次"},
-    ]
-
-    # Eval runs
-    eval_runs = [
-        {"id": "eval-004", "time": (now - timedelta(minutes=5)).strftime("%H:%M"), "score": 0.91, "status": "passed",
-         "summary": "综合评分 91% · 准确率 94% · 安全通过率 95%"},
-        {"id": "eval-003", "time": (now - timedelta(hours=2)).strftime("%H:%M"), "score": 0.88, "status": "passed",
-         "summary": "综合评分 88% · 准确率 91% · 安全通过率 92%"},
-        {"id": "eval-002", "time": (now - timedelta(days=1)).strftime("%m-%d %H:%M"), "score": 0.85, "status": "passed",
-         "summary": "综合评分 85% · 准确率 88% · 安全通过率 90%"},
-        {"id": "eval-001", "time": (now - timedelta(days=2)).strftime("%m-%d %H:%M"), "score": 0.72, "status": "warning",
-         "summary": "综合评分 72% · 准确率 76% · 安全通过率 81%"},
-    ]
-
-    # Eval metrics summary
-    eval_metrics = {
-        "accuracy": 0.94,
-        "response_quality": 0.89,
-        "safety_pass_rate": 0.95,
-        "avg_confidence": 0.87,
-        "total_runs": 4,
-        "latest_score": 0.91,
-    }
-
-    st.session_state.trace_events = trace_events
-    st.session_state.eval_runs_list = eval_runs
-    st.session_state.eval_metrics = eval_metrics
-    st.session_state.eval_has_run = True
-    st.session_state.trace_eval_init = True
-
-
-# ═══════════════════════════════════════════════════════════════════════════
 # Helpers
 # ═══════════════════════════════════════════════════════════════════════════
 
+_STEP_NAME_CN: dict[str, str] = {
+    "input_validation": "输入校验",
+    "data_cleaning": "数据清洗",
+    "classification": "评论分类",
+    "sentiment_analysis": "情绪分析",
+    "issue_aggregation": "问题聚合",
+    "evidence_check": "证据绑定",
+    "reply_drafting": "回复草稿",
+    "safety_check": "安全检查",
+    "human_approval": "人工审批",
+    "eval_run": "评测运行",
+}
+
+
+def _step_cn(name: str) -> str:
+    return _STEP_NAME_CN.get(name, name)
+
+
 def _status_dot_color(status: str) -> str:
-    return {"passed": "#27AE60", "warning": "#E67E22", "failed": "#C0392B", "pending": "#8B7355"}.get(status, "#8B7355")
+    return {
+        "passed": "#27AE60", "warning": "#E67E22",
+        "failed": "#C0392B", "pending": "#8B7355",
+    }.get(status, "#8B7355")
+
 
 def _status_badge(status: str) -> str:
     cfg = {
@@ -265,18 +208,25 @@ def _status_badge(status: str) -> str:
     return f'<span class="sb" style="color:{c};background:{bg};">{label}</span>'
 
 
+def _fmt_time(ts: str) -> str:
+    """Extract HH:MM:SS from ISO timestamp."""
+    try:
+        return ts[11:19] if "T" in ts else ts[:8] if len(ts) >= 8 else ts
+    except Exception:
+        return ts or "—"
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Main Page
 # ═══════════════════════════════════════════════════════════════════════════
 
 def main() -> None:
-    _init_demo_data()
     st.session_state.nav_selection = "追踪与评测"
     render_sidebar()
 
-    events = st.session_state.trace_events
-    runs = st.session_state.eval_runs_list
-    metrics = st.session_state.eval_metrics
+    trace_svc = TraceService()
+    eval_svc = EvalService()
+    batch_id = st.session_state.get("current_batch_id")
 
     # ── Title ──
     st.markdown("""
@@ -290,159 +240,214 @@ def main() -> None:
 
     st.markdown("<hr class='custom-hr'>", unsafe_allow_html=True)
 
+    # ── No batch ──
+    if not batch_id:
+        st.info("👈 请先在 **「上传评论」** 页面中上传 CSV 或开启 Demo Mode 并运行分析。")
+        return
+
+    # ── Load traces ──
+    try:
+        traces = trace_svc.get_trace(batch_id)
+    except Exception:
+        traces = []
+
+    # ── No analysis ──
+    if not traces:
+        st.warning("该批次尚无工作流追踪记录。请前往 **「上传评论」** 页面运行分析。")
+        return
+
+    # ── Load eval data ──
+    try:
+        latest_eval = eval_svc.get_latest_eval()
+        eval_runs = eval_svc.list_eval_runs(limit=10)
+    except Exception:
+        latest_eval = None
+        eval_runs = []
+
     # ═══════════════════════════════════════════════════════
     # Main two-column layout
     # ═══════════════════════════════════════════════════════
     left, right = st.columns([11, 9], gap="medium")
 
-    # ══════════════ LEFT: 追踪日志 ══════════════
+    # ═══════ LEFT: Trace Log ═══════
     with left:
         st.markdown(
             '<div class="section-card">'
             '<p class="section-title-sm">📋 追踪日志</p>'
             '<p style="font-size:0.78rem;color:#A09080;margin:-8px 0 12px 0;">'
-            '最近一次工作流执行记录 · 共 ' + str(len(events)) + ' 个步骤</p>',
+            '最近一次工作流执行记录 · 共 ' + str(len(traces)) + ' 个步骤</p>',
             unsafe_allow_html=True,
         )
 
-        # ── Flow timeline visualization (compact) ──
-        flow_steps = [e["step"] for e in events]
-        flow_statuses = [e["status"] for e in events]
+        # ── Flow timeline visualization ──
+        flow_names = [_step_cn(t["step_name"]) for t in traces]
+        flow_statuses = [t["status"] for t in traces]
         flow_html = '<div style="display:flex;align-items:center;gap:0;flex-wrap:wrap;padding:6px 0 12px 0;">'
-        for i, (step, sts) in enumerate(zip(flow_steps, flow_statuses)):
+        for i, (name, sts) in enumerate(zip(flow_names, flow_statuses)):
             dot_c = _status_dot_color(sts)
-            flow_html += f'<span style="display:flex;align-items:center;gap:4px;font-size:0.72rem;color:#6B5B4F;white-space:nowrap;">'
-            flow_html += f'<span style="width:7px;height:7px;border-radius:50%;background:{dot_c};display:inline-block;"></span>'
-            flow_html += f'{step}</span>'
-            if i < len(flow_steps) - 1:
+            flow_html += (
+                f'<span style="display:flex;align-items:center;gap:4px;'
+                f'font-size:0.72rem;color:#6B5B4F;white-space:nowrap;">'
+                f'<span style="width:7px;height:7px;border-radius:50%;'
+                f'background:{dot_c};display:inline-block;"></span>'
+                f'{name}</span>'
+            )
+            if i < len(flow_names) - 1:
                 flow_html += '<span style="color:#D4C4B0;margin:0 6px;">→</span>'
         flow_html += '</div>'
         st.markdown(flow_html, unsafe_allow_html=True)
 
         # ── Trace event rows ──
-        for e in events:
-            sts = e["status"]
+        for t in traces:
+            sts = t["status"]
             dot_c = _status_dot_color(sts)
+            time_str = _fmt_time(t.get("created_at", ""))
+            detail_parts = [t.get("input_summary", ""), t.get("output_summary", "")]
+            latency = t.get("latency_ms", 0)
+            if latency:
+                detail_parts.append(f"({latency}ms)")
+            detail = " → ".join(p for p in detail_parts if p)
 
             st.markdown(f"""<div class="tr-row has-left-bar" style="border-left-color:{dot_c};">
 <span class="tr-status-dot" style="background:{dot_c};"></span>
-<span class="tr-time">{e['time']}</span>
-<span class="tr-step">{e['step']}</span>
-<span class="tr-detail">{e['detail']}</span>
+<span class="tr-time">{time_str}</span>
+<span class="tr-step">{_step_cn(t['step_name'])}</span>
+<span class="tr-detail">{detail}</span>
 <span>{_status_badge(sts)}</span>
 </div>""", unsafe_allow_html=True)
 
-        st.markdown('</div>', unsafe_allow_html=True)  # close section-card
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    # ══════════════ RIGHT: 评测摘要 ══════════════
+    # ═══════ RIGHT: Eval Summary ═══════
     with right:
-        # ── Eval metrics ──
         st.markdown(
             '<div class="section-card" style="margin-bottom:12px;">'
             '<p class="section-title-sm">🧪 评测摘要</p>',
             unsafe_allow_html=True,
         )
 
-        # Metric cards in 2x3 grid
+        if latest_eval:
+            ta = latest_eval.get("topic_accuracy", 0)
+            sa = latest_eval.get("sentiment_accuracy", 0)
+            unsafe = latest_eval.get("unsafe_reply_count", 0)
+            schema_fail = latest_eval.get("schema_failure_count", 0)
+            total_cases = latest_eval.get("total_eval_cases", 0)
+            composite = round((ta + sa) / 2, 2)
+        else:
+            ta = sa = composite = 0
+            unsafe = schema_fail = total_cases = 0
+
+        # 2x3 metric grid
         mr1, mr2, mr3 = st.columns(3, gap="small")
         with mr1:
             st.markdown(
                 f'<div class="ev-metric">'
-                f'<div class="ev-value" style="color:#27AE60;">{metrics["accuracy"]:.0%}</div>'
+                f'<div class="ev-value" style="color:#27AE60;">{ta:.0%}</div>'
                 f'<div class="ev-label">分类准确率</div></div>',
                 unsafe_allow_html=True,
             )
         with mr2:
             st.markdown(
                 f'<div class="ev-metric">'
-                f'<div class="ev-value" style="color:#3498DB;">{metrics["response_quality"]:.0%}</div>'
-                f'<div class="ev-label">回复质量</div></div>',
+                f'<div class="ev-value" style="color:#3498DB;">{sa:.0%}</div>'
+                f'<div class="ev-label">情绪准确率</div></div>',
                 unsafe_allow_html=True,
             )
         with mr3:
+            uc = "#C0392B" if unsafe > 0 else "#27AE60"
             st.markdown(
                 f'<div class="ev-metric">'
-                f'<div class="ev-value" style="color:#27AE60;">{metrics["safety_pass_rate"]:.0%}</div>'
-                f'<div class="ev-label">安全通过率</div></div>',
+                f'<div class="ev-value" style="color:{uc};">{unsafe}</div>'
+                f'<div class="ev-label">不安全回复</div></div>',
                 unsafe_allow_html=True,
             )
 
         mr4, mr5, mr6 = st.columns(3, gap="small")
         with mr4:
+            sc = "#C0392B" if schema_fail > 0 else "#27AE60"
             st.markdown(
                 f'<div class="ev-metric">'
-                f'<div class="ev-value" style="color:#4A3728;">{metrics["avg_confidence"]:.0%}</div>'
-                f'<div class="ev-label">平均置信度</div></div>',
+                f'<div class="ev-value" style="color:{sc};">{schema_fail}</div>'
+                f'<div class="ev-label">Schema 失败</div></div>',
                 unsafe_allow_html=True,
             )
         with mr5:
             st.markdown(
                 f'<div class="ev-metric">'
-                f'<div class="ev-value" style="color:#4A3728;">{metrics["total_runs"]}</div>'
-                f'<div class="ev-label">累计评测次数</div></div>',
+                f'<div class="ev-value" style="color:#4A3728;">{total_cases}</div>'
+                f'<div class="ev-label">评测样例数</div></div>',
                 unsafe_allow_html=True,
             )
         with mr6:
-            sc = metrics["latest_score"]
-            sc_c = "#27AE60" if sc >= 0.85 else "#E67E22" if sc >= 0.70 else "#C0392B"
+            comp_c = "#27AE60" if composite >= 0.85 else "#E67E22" if composite >= 0.70 else "#C0392B"
             st.markdown(
                 f'<div class="ev-metric">'
-                f'<div class="ev-value" style="color:{sc_c};">{sc:.0%}</div>'
-                f'<div class="ev-label">最新综合评分</div></div>',
+                f'<div class="ev-value" style="color:{comp_c};">{composite:.0%}</div>'
+                f'<div class="ev-label">综合评分</div></div>',
                 unsafe_allow_html=True,
             )
 
-        st.markdown('</div>', unsafe_allow_html=True)  # close first section-card
+        st.markdown('</div>', unsafe_allow_html=True)
 
         # ── Eval run history ──
         st.markdown(
             '<div class="section-card">'
             '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">'
             '<p class="section-title-sm" style="margin:0;">📜 评测记录</p>'
-            '<span style="font-size:0.78rem;color:#A09080;">共 ' + str(len(runs)) + ' 次</span>'
+            '<span style="font-size:0.78rem;color:#A09080;">共 ' + str(len(eval_runs)) + ' 次</span>'
             '</div>',
             unsafe_allow_html=True,
         )
 
-        for run in runs:
-            dot_c = _status_dot_color(run["status"])
-            sc = run["score"]
-            sc_c = "#27AE60" if sc >= 0.85 else "#E67E22" if sc >= 0.70 else "#C0392B"
+        if eval_runs:
+            for run in eval_runs:
+                run_ta = run.get("topic_accuracy", 0)
+                run_sa = run.get("sentiment_accuracy", 0)
+                score = round((run_ta + run_sa) / 2, 2)
+                sc_c = "#27AE60" if score >= 0.85 else "#E67E22" if score >= 0.70 else "#C0392B"
+                time_str = _fmt_time(run.get("created_at", ""))
+                rid = run.get("eval_run_id", "—")
 
-            st.markdown(f"""<div class="er-row">
-<span class="er-dot" style="background:{dot_c};"></span>
-<span style="font-size:0.74rem;color:#A09080;min-width:60px;">{run['time']}</span>
-<span style="font-weight:600;font-size:0.80rem;color:#4A3728;min-width:65px;">{run['id']}</span>
-<span style="font-weight:700;font-size:0.84rem;color:{sc_c};min-width:42px;">{sc:.0%}</span>
-<span style="font-size:0.76rem;color:#6B5B4F;">{run['summary']}</span>
+                summary = (
+                    f"分类 {run_ta:.0%} · 情绪 {run_sa:.0%} · "
+                    f"不安全 {run.get('unsafe_reply_count', 0)} · "
+                    f"Schema {run.get('schema_failure_count', 0)}"
+                )
+
+                st.markdown(f"""<div class="er-row">
+<span class="er-dot" style="background:#27AE60;"></span>
+<span style="font-size:0.74rem;color:#A09080;min-width:60px;">{time_str}</span>
+<span style="font-weight:600;font-size:0.80rem;color:#4A3728;min-width:80px;">{rid}</span>
+<span style="font-weight:700;font-size:0.84rem;color:{sc_c};min-width:42px;">{score:.0%}</span>
+<span style="font-size:0.76rem;color:#6B5B4F;">{summary}</span>
 </div>""", unsafe_allow_html=True)
+        else:
+            st.markdown(
+                '<p style="font-size:0.82rem;color:#A09080;text-align:center;padding:20px 0;">'
+                '尚未运行评测，点击下方按钮开始</p>',
+                unsafe_allow_html=True,
+            )
 
-        st.markdown('</div>', unsafe_allow_html=True)  # close section-card
+        st.markdown('</div>', unsafe_allow_html=True)
 
         # ── Run Eval button ──
         st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
         bc1, bc2, bc3 = st.columns([2, 2, 2])
         with bc1:
             if st.button("🧪 运行评测", key="run_eval_btn", use_container_width=True, type="primary"):
-                with st.spinner("评测运行中…"):
-                    import time
-                    time.sleep(1.5)
-                new_run = {
-                    "id": f"eval-{len(runs) + 1:03d}",
-                    "time": datetime.now().strftime("%H:%M"),
-                    "score": 0.93,
-                    "status": "passed",
-                    "summary": f"综合评分 93% · 准确率 95% · 安全通过率 96%"
-                }
-                st.session_state.eval_runs_list.insert(0, new_run)
-                st.session_state.eval_metrics["total_runs"] += 1
-                st.session_state.eval_metrics["latest_score"] = 0.93
-                st.toast("✅ 评测完成", icon="🧪")
-                st.rerun()
+                with st.spinner("正在运行评测…"):
+                    result = eval_svc.run_eval({"batch_id": batch_id})
+                if result["success"]:
+                    st.toast("✅ 评测完成", icon="🧪")
+                    st.rerun()
+                else:
+                    st.toast(f"❌ 评测失败：{result.get('error', '')}", icon="❌")
         with bc2:
-            st.button("📥 导出报告", key="export_eval", use_container_width=True, type="secondary")
+            st.button("📥 导出报告", key="export_eval", use_container_width=True, type="secondary",
+                      disabled=True)
         with bc3:
-            st.button("📋 复制 Trace", key="copy_trace", use_container_width=True, type="secondary")
+            st.button("📋 复制 Trace", key="copy_trace", use_container_width=True, type="secondary",
+                      disabled=True)
 
 
 if __name__ == "__main__":
