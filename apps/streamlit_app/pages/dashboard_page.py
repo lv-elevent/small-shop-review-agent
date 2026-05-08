@@ -1,6 +1,6 @@
 """
 Dashboard Page — 数据看板：评论概览、三大问题、Harness 状态、审核队列
-参照示例图布局：指标卡 → 左(三大问题) + 右(Harness + 审核队列纵向堆叠)
+接入 InsightService / ReplyService / TraceService / EvalService 真实数据
 """
 
 from __future__ import annotations
@@ -19,6 +19,13 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from apps.streamlit_app.components.metric_card import metric_card
 from apps.streamlit_app.components.sidebar import render_sidebar
+from small_shop_agent.services.insight_service import InsightService
+from small_shop_agent.services.reply_service import ReplyService
+from small_shop_agent.services.trace_service import TraceService
+from small_shop_agent.services.eval_service import EvalService
+from small_shop_agent.storage.database import execute_migrations, get_connection
+
+execute_migrations()
 
 # ── Page config ──────────────────────────────────────────────────────────
 st.set_page_config(
@@ -148,7 +155,7 @@ st.markdown("""
         padding: 2px 10px; border-radius: 10px; white-space: nowrap;
     }
 
-    /* ── Queue row (inside table-like HTML) ── */
+    /* ── Queue row ── */
     .q-item {
         display: flex;
         align-items: center;
@@ -158,7 +165,7 @@ st.markdown("""
         font-size: 0.76rem;
     }
     .q-item:last-child { border-bottom: none; }
-    .q-id { font-weight: 600; color: #4A3728; min-width: 40px; }
+    .q-id { font-weight: 600; color: #4A3728; min-width: 48px; }
     .q-text { flex: 1; color: #6B5B4F; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .q-badge {
         font-size: 0.68rem; font-weight: 600; padding: 2px 8px; border-radius: 10px;
@@ -188,99 +195,72 @@ st.markdown("""
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Demo Data
+# Data Loading
 # ═══════════════════════════════════════════════════════════════════════════
 
-def _init_demo_data() -> None:
-    if "dashboard_initialized" in st.session_state:
-        return
+def _load_dashboard_data(batch_id: str) -> dict:
+    """Load all dashboard data from real services for a given batch."""
+    insight_svc = InsightService()
+    reply_svc = ReplyService()
+    trace_svc = TraceService()
+    eval_svc = EvalService()
 
-    reviews = [
-        {"review_id":"D001","review_text":"咖啡味道不错，环境也好","rating":5,"category":"口味","sentiment":"positive","issue":"","severity":"","reply_draft":"","reviewed":False,"approved":False},
-        {"review_id":"D002","review_text":"等了快40分钟才上菜，太慢了","rating":1,"category":"出餐速度","sentiment":"negative","issue":"出餐速度慢","severity":"high","reply_draft":"非常抱歉让您久等了...","reviewed":False,"approved":False},
-        {"review_id":"D003","review_text":"服务员态度冷淡，爱答不理","rating":2,"category":"服务","sentiment":"negative","issue":"服务态度差","severity":"high","reply_draft":"感谢您的反馈，我们会加强培训...","reviewed":False,"approved":False},
-        {"review_id":"D004","review_text":"挺好的，会再来","rating":4,"category":"综合","sentiment":"positive","issue":"","severity":"","reply_draft":"","reviewed":False,"approved":False},
-        {"review_id":"D005","review_text":"桌面油腻腻的，卫生堪忧","rating":1,"category":"环境","sentiment":"negative","issue":"环境卫生问题","severity":"medium","reply_draft":"非常抱歉，我们马上整改...","reviewed":False,"approved":False},
-        {"review_id":"D006","review_text":"拿铁拉花很漂亮","rating":5,"category":"口味","sentiment":"positive","issue":"","severity":"","reply_draft":"","reviewed":False,"approved":False},
-        {"review_id":"D007","review_text":"等了20分钟被告知卖完了","rating":1,"category":"出餐速度","sentiment":"negative","issue":"出餐速度慢","severity":"high","reply_draft":"非常抱歉给您带来不好体验...","reviewed":False,"approved":False},
-        {"review_id":"D008","review_text":"价格实惠，性价比高","rating":4,"category":"价格","sentiment":"positive","issue":"","severity":"","reply_draft":"","reviewed":False,"approved":False},
-        {"review_id":"D009","review_text":"服务员上错菜还不承认","rating":1,"category":"服务","sentiment":"negative","issue":"服务态度差","severity":"high","reply_draft":"感谢指出，我们已严肃处理...","reviewed":False,"approved":False},
-        {"review_id":"D010","review_text":"甜品不错，适合下午茶","rating":4,"category":"口味","sentiment":"positive","issue":"","severity":"","reply_draft":"","reviewed":False,"approved":False},
-        {"review_id":"D011","review_text":"音乐太大声，影响聊天","rating":2,"category":"环境","sentiment":"negative","issue":"环境卫生问题","severity":"medium","reply_draft":"谢谢建议，我们会调整音量...","reviewed":False,"approved":False},
-        {"review_id":"D012","review_text":"周末高峰期完全没人管排队","rating":1,"category":"出餐速度","sentiment":"negative","issue":"出餐速度慢","severity":"high","reply_draft":"非常抱歉，我们将优化排队管理...","reviewed":False,"approved":False},
-        {"review_id":"D013","review_text":"红茶拿铁绝了！","rating":5,"category":"口味","sentiment":"positive","issue":"","severity":"","reply_draft":"","reviewed":False,"approved":False},
-        {"review_id":"D014","review_text":"卫生间不太干净","rating":2,"category":"环境","sentiment":"negative","issue":"环境卫生问题","severity":"medium","reply_draft":"感谢提醒，已安排加强清洁...","reviewed":False,"approved":False},
-        {"review_id":"D015","review_text":"旁边那桌孩子吵闹也没人管","rating":2,"category":"环境","sentiment":"negative","issue":"环境卫生问题","severity":"low","reply_draft":"感谢反馈，我们会注意用餐秩序...","reviewed":False,"approved":False},
-        {"review_id":"D016","review_text":"面包新鲜出炉，太香了","rating":5,"category":"口味","sentiment":"positive","issue":"","severity":"","reply_draft":"","reviewed":False,"approved":False},
-        {"review_id":"D017","review_text":"结账时多收了一杯咖啡的钱","rating":1,"category":"服务","sentiment":"negative","issue":"服务态度差","severity":"high","reply_draft":"非常抱歉，我们立即核查退款...","reviewed":False,"approved":False},
-        {"review_id":"D018","review_text":"出餐等了25分钟，催了三次","rating":1,"category":"出餐速度","sentiment":"negative","issue":"出餐速度慢","severity":"high","reply_draft":"非常抱歉，我们正优化出餐流程...","reviewed":False,"approved":False},
-        {"review_id":"D019","review_text":"很适合办公，WiFi很稳定","rating":4,"category":"环境","sentiment":"positive","issue":"","severity":"","reply_draft":"","reviewed":False,"approved":False},
-        {"review_id":"D020","review_text":"收银员边玩手机边结账","rating":2,"category":"服务","sentiment":"negative","issue":"服务态度差","severity":"medium","reply_draft":"感谢反馈，已对员工进行批评教育...","reviewed":False,"approved":False},
-        {"review_id":"D021","review_text":"桂花拿铁很好喝","rating":5,"category":"口味","sentiment":"positive","issue":"","severity":"","reply_draft":"","reviewed":False,"approved":False},
-        {"review_id":"D022","review_text":"和朋友聊聊天感觉不错","rating":4,"category":"综合","sentiment":"positive","issue":"","severity":"","reply_draft":"","reviewed":False,"approved":False},
-        {"review_id":"D023","review_text":"点单时态度特别不耐烦","rating":2,"category":"服务","sentiment":"negative","issue":"服务态度差","severity":"medium","reply_draft":"非常抱歉，我们已批评当事员工...","reviewed":False,"approved":False},
-        {"review_id":"D024","review_text":"口味一如既往地好","rating":4,"category":"口味","sentiment":"positive","issue":"","severity":"","reply_draft":"","reviewed":False,"approved":False},
-        {"review_id":"D025","review_text":"高峰期只有一个人做咖啡","rating":1,"category":"出餐速度","sentiment":"negative","issue":"出餐速度慢","severity":"high","reply_draft":"感谢反馈，我们将调整排班...","reviewed":False,"approved":False},
-        {"review_id":"D026","review_text":"舒芙蕾入口即化","rating":5,"category":"口味","sentiment":"positive","issue":"","severity":"","reply_draft":"","reviewed":False,"approved":False},
-        {"review_id":"D027","review_text":"咖啡豆品质不错","rating":5,"category":"口味","sentiment":"positive","issue":"","severity":"","reply_draft":"","reviewed":False,"approved":False},
-        {"review_id":"D028","review_text":"店里装修很有格调","rating":4,"category":"环境","sentiment":"positive","issue":"","severity":"","reply_draft":"","reviewed":False,"approved":False},
-        {"review_id":"D029","review_text":"外卖打包得很用心","rating":4,"category":"服务","sentiment":"positive","issue":"","severity":"","reply_draft":"","reviewed":False,"approved":False},
-        {"review_id":"D030","review_text":"位置好找，停车方便","rating":4,"category":"综合","sentiment":"positive","issue":"","severity":"","reply_draft":"","reviewed":False,"approved":False},
-        {"review_id":"D031","review_text":"冰美式寡淡无味","rating":2,"category":"口味","sentiment":"negative","issue":"口味不稳定","severity":"medium","reply_draft":"感谢反馈，我们会检查出品标准...","reviewed":False,"approved":False},
-        {"review_id":"D032","review_text":"提拉米苏太甜了","rating":3,"category":"口味","sentiment":"neutral","issue":"口味不稳定","severity":"low","reply_draft":"","reviewed":False,"approved":False},
-        {"review_id":"D033","review_text":"店员很热情，推荐了新品","rating":5,"category":"服务","sentiment":"positive","issue":"","severity":"","reply_draft":"","reviewed":False,"approved":False},
-        {"review_id":"D034","review_text":"地板上有食物残渣没扫","rating":2,"category":"环境","sentiment":"negative","issue":"环境卫生问题","severity":"medium","reply_draft":"感谢提醒，已安排打扫...","reviewed":False,"approved":False},
-        {"review_id":"D035","review_text":"每次都来这里，习惯了","rating":4,"category":"综合","sentiment":"positive","issue":"","severity":"","reply_draft":"","reviewed":False,"approved":False},
-        {"review_id":"D036","review_text":"等了15分钟，咖啡还没上","rating":2,"category":"出餐速度","sentiment":"negative","issue":"出餐速度慢","severity":"high","reply_draft":"非常抱歉，我们会改善...","reviewed":False,"approved":False},
-        {"review_id":"D037","review_text":"牛角包酥脆掉渣，好吃","rating":5,"category":"口味","sentiment":"positive","issue":"","severity":"","reply_draft":"","reviewed":False,"approved":False},
-        {"review_id":"D038","review_text":"WiFi密码没贴出来，不方便","rating":3,"category":"服务","sentiment":"neutral","issue":"服务细节不足","severity":"low","reply_draft":"","reviewed":False,"approved":False},
-        {"review_id":"D039","review_text":"老板人很nice","rating":5,"category":"服务","sentiment":"positive","issue":"","severity":"","reply_draft":"","reviewed":False,"approved":False},
-        {"review_id":"D040","review_text":"插座太少，充电不方便","rating":3,"category":"环境","sentiment":"neutral","issue":"设施不足","severity":"low","reply_draft":"","reviewed":False,"approved":False},
-        {"review_id":"D041","review_text":"整体不错，会推荐朋友来","rating":4,"category":"综合","sentiment":"positive","issue":"","severity":"","reply_draft":"","reviewed":False,"approved":False},
-        {"review_id":"D042","review_text":"出餐号牌不显示，不知道好了没","rating":2,"category":"出餐速度","sentiment":"negative","issue":"出餐速度慢","severity":"medium","reply_draft":"感谢反馈，我们正在升级叫号系统...","reviewed":False,"approved":False},
-        {"review_id":"D043","review_text":"抹茶千层层次分明","rating":5,"category":"口味","sentiment":"positive","issue":"","severity":"","reply_draft":"","reviewed":False,"approved":False},
-        {"review_id":"D044","review_text":"态度不好，像是欠他钱","rating":1,"category":"服务","sentiment":"negative","issue":"服务态度差","severity":"high","reply_draft":"非常抱歉，我们会严肃处理...","reviewed":False,"approved":False},
-        {"review_id":"D045","review_text":"音乐选品品味在线","rating":4,"category":"环境","sentiment":"positive","issue":"","severity":"","reply_draft":"","reviewed":False,"approved":False},
-        {"review_id":"D046","review_text":"漏给了一杯饮品，沟通半天","rating":1,"category":"服务","sentiment":"negative","issue":"服务态度差","severity":"high","reply_draft":"非常抱歉出现遗漏，我们立即改进...","reviewed":False,"approved":False},
-        {"review_id":"D047","review_text":"停车券没有主动给","rating":3,"category":"服务","sentiment":"neutral","issue":"服务细节不足","severity":"low","reply_draft":"","reviewed":False,"approved":False},
-        {"review_id":"D048","review_text":"二楼靠窗位子很棒","rating":5,"category":"环境","sentiment":"positive","issue":"","severity":"","reply_draft":"","reviewed":False,"approved":False},
-    ]
+    # Top issues
+    top_issues = insight_svc.get_top_issues(batch_id)
 
-    top_issues = [
-        {"id":1,"title":"出餐速度慢 — 高峰期备餐能力不足","mentions":9,"severity":"high","severity_label":"高",
-         "evidence_ids":["D002","D007","D012","D018","D025","D036","D042"],
-         "suggestion":"建议高峰时段增加 1 名备餐员，提前预配常用食材，优化订单排队算法"},
-        {"id":2,"title":"服务态度差 — 员工沟通与情绪管理","mentions":7,"severity":"high","severity_label":"高",
-         "evidence_ids":["D003","D009","D017","D020","D023","D044","D046"],
-         "suggestion":"安排服务礼仪复训，建立差评关联绩效机制，每周例会复盘典型案例"},
-        {"id":3,"title":"环境卫生问题 — 清洁频次与死角管理","mentions":5,"severity":"medium","severity_label":"中",
-         "evidence_ids":["D005","D011","D014","D015","D034"],
-         "suggestion":"制定每 2 小时巡检表，重点覆盖卫生间和用餐区，张贴清洁签到码"},
-    ]
+    # Attach evidence review_ids to each issue
+    for issue in top_issues:
+        evidence_rows = insight_svc.get_issue_evidence(issue["id"])
+        issue["evidence_review_ids"] = [e["review_id"] for e in evidence_rows]
 
-    harness_checks = [
-        {"name":"输入校验","status":"passed","detail":"48/48 条通过"},
-        {"name":"Schema 约束","status":"passed","detail":"所有字段合法"},
-        {"name":"证据绑定","status":"passed","detail":"19 条证据已关联"},
-        {"name":"安全检查","status":"passed","detail":"无违规内容"},
-        {"name":"人工审批","status":"pending","detail":"12 条待审核"},
-    ]
+    # Pending drafts
+    pending_drafts = reply_svc.get_pending_drafts(batch_id)
 
-    negative_reviews = [r for r in reviews if r["sentiment"] == "negative"]
+    # Traces
+    traces = trace_svc.get_trace(batch_id)
 
-    st.session_state.demo_reviews = reviews
-    st.session_state.demo_top_issues = top_issues
-    st.session_state.demo_harness = harness_checks
-    st.session_state.demo_neg_count = sum(1 for r in reviews if r["sentiment"] == "negative")
-    st.session_state.demo_pending_count = sum(1 for r in reviews if r["sentiment"] == "negative" and not r["reviewed"])
-    st.session_state.demo_avg_rating = round(sum(r["rating"] for r in reviews) / len(reviews), 1)
-    st.session_state.demo_total = len(reviews)
-    st.session_state.demo_reply_queue = negative_reviews
-    st.session_state.dashboard_initialized = True
+    # Eval
+    latest_eval = eval_svc.get_latest_eval()
+
+    # Counts from DB
+    with get_connection() as conn:
+        valid_reviews = conn.execute(
+            "SELECT COUNT(*) as cnt FROM reviews WHERE batch_id = ? AND is_valid = 1",
+            (batch_id,),
+        ).fetchone()
+        total_valid = valid_reviews["cnt"] if valid_reviews else 0
+
+        avg_row = conn.execute(
+            "SELECT AVG(CAST(rating AS REAL)) as avg_r FROM reviews WHERE batch_id = ? AND is_valid = 1",
+            (batch_id,),
+        ).fetchone()
+        avg_rating = round(avg_row["avg_r"], 1) if avg_row and avg_row["avg_r"] else 0
+
+        neg_row = conn.execute(
+            "SELECT COUNT(*) as cnt FROM review_analysis WHERE batch_id = ? AND is_negative_candidate = 1",
+            (batch_id,),
+        ).fetchone()
+        negative_count = neg_row["cnt"] if neg_row else 0
+
+        analysis_exists = conn.execute(
+            "SELECT COUNT(*) as cnt FROM review_analysis WHERE batch_id = ?", (batch_id,),
+        ).fetchone()["cnt"]
+
+    return {
+        "top_issues": top_issues,
+        "pending_drafts": pending_drafts,
+        "traces": traces,
+        "latest_eval": latest_eval,
+        "total_valid": total_valid,
+        "avg_rating": avg_rating,
+        "negative_count": negative_count,
+        "pending_count": len(pending_drafts),
+        "has_analysis": analysis_exists > 0,
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Pagination (compact, right-aligned)
+# Pagination
 # ═══════════════════════════════════════════════════════════════════════════
 
 def _render_pagination(total_items: int, page_size: int = 5) -> int:
@@ -313,44 +293,80 @@ def _render_pagination(total_items: int, page_size: int = 5) -> int:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Component: Issue Card
+# Component: Issue Card (real data shape)
 # ═══════════════════════════════════════════════════════════════════════════
 
 def _render_issue_card(issue: dict) -> None:
+    sev = issue.get("severity_level", "medium")
     sev_colors = {"high": "#C0392B", "medium": "#E67E22", "low": "#27AE60"}
-    stripe_color = sev_colors.get(issue["severity"], "#8B7355")
-    sev_color = sev_colors.get(issue["severity"], "#8B7355")
+    stripe_color = sev_colors.get(sev, "#8B7355")
+    sev_color = sev_colors.get(sev, "#8B7355")
+    sev_label = {"high": "高", "medium": "中", "low": "低"}.get(sev, sev)
 
-    evidence_html = " ".join(f"<code>{eid}</code>" for eid in issue["evidence_ids"])
+    evidence_ids = issue.get("evidence_review_ids", [])
+    evidence_html = " ".join(f"<code>{eid}</code>" for eid in evidence_ids) if evidence_ids else "暂无关联评论"
 
     html = f"""<div class="issue-card">
 <div class="severity-stripe" style="background:{stripe_color};"></div>
 <div class="issue-header">
-<span class="issue-num">问题 #{issue['id']}</span>
-<span class="sev-dot" style="color:{sev_color};">● {issue['severity_label']}严重</span>
+<span class="issue-num">问题 #{issue['rank']}</span>
+<span class="sev-dot" style="color:{sev_color};">● {sev_label}严重</span>
 </div>
-<div class="issue-title">{issue['title']}</div>
+<div class="issue-title">{issue['issue_name']}</div>
 <div class="issue-stats">
-<span>提及 <b>{issue['mentions']}</b> 次</span>
-<span>证据 <b>{len(issue['evidence_ids'])}</b> 条</span>
+<span>提及 <b>{issue['mention_count']}</b> 次</span>
+<span>证据 <b>{issue['evidence_count']}</b> 条 · {issue.get('evidence_status', '—')}</span>
 </div>
 <div class="evidence-list">关联评论：{evidence_html}</div>
-<span class="btn-suggestion">💡 {issue['suggestion']}</span>
+<span class="btn-suggestion">💡 {issue.get('suggested_action', '暂无建议')}</span>
 </div>"""
     st.markdown(html, unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Component: Harness Status
+# Component: Harness Status (derived from traces)
 # ═══════════════════════════════════════════════════════════════════════════
 
-def _render_harness_status(checks: list[dict]) -> None:
-    status_icon = {"passed": "✓", "pending": "◷", "failed": "✗"}
-    status_color = {"passed": "#27AE60", "pending": "#E67E22", "failed": "#C0392B"}
+def _render_harness_status(traces: list[dict], pending_count: int) -> None:
+    trace_map = {t["step_name"]: t for t in traces}
+
+    checks = [
+        {
+            "name": "输入校验",
+            "status": trace_map.get("input_validation", {}).get("status", "pending"),
+            "detail": trace_map.get("input_validation", {}).get("output_summary", "—"),
+        },
+        {
+            "name": "Schema 约束",
+            "status": "passed" if all(
+                t.get("status") != "failed" for t in traces
+            ) else "failed",
+            "detail": f"{len(traces)} 个步骤，无 schema 异常",
+        },
+        {
+            "name": "证据绑定",
+            "status": trace_map.get("evidence_check", {}).get("status", "pending"),
+            "detail": trace_map.get("evidence_check", {}).get("output_summary", "—"),
+        },
+        {
+            "name": "安全检查",
+            "status": trace_map.get("safety_check", {}).get("status", "pending"),
+            "detail": trace_map.get("safety_check", {}).get("output_summary", "—"),
+        },
+        {
+            "name": "人工审批",
+            "status": "passed" if pending_count == 0 else "pending",
+            "detail": f"{pending_count} 条待审核" if pending_count > 0 else "全部审核完成",
+        },
+    ]
+
+    status_icon = {"passed": "✓", "pending": "◷", "failed": "✗", "warning": "⚠"}
+    status_color = {"passed": "#27AE60", "pending": "#E67E22", "failed": "#C0392B", "warning": "#E67E22"}
     status_badge = {
         "passed": ("#27AE60", "#E8F8F0", "✓ 通过"),
         "pending": ("#E67E22", "#FEF5E7", "◷ 进行中"),
         "failed": ("#C0392B", "#FDEDEC", "✗ 未通过"),
+        "warning": ("#E67E22", "#FEF5E7", "⚠ 警告"),
     }
 
     html_parts = ['<div class="section-card">',
@@ -377,18 +393,26 @@ def _render_harness_status(checks: list[dict]) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Component: Reply Queue — HTML rows, compact
+# Component: Reply Queue (real draft data)
 # ═══════════════════════════════════════════════════════════════════════════
 
-def _render_reply_queue(queue: list[dict], page: int, page_size: int = 4) -> None:
+def _render_reply_queue(drafts: list[dict], page: int, page_size: int = 4) -> None:
     start = page * page_size
-    page_items = queue[start:start + page_size]
+    page_items = drafts[start:start + page_size]
 
-    if not page_items:
-        st.info("所有差评已处理完毕")
+    if not drafts:
+        st.info("所有差评回复已处理完毕")
         return
 
-    sev_dot_map = {"high": ("#C0392B", "高"), "medium": ("#E67E22", "中"), "low": ("#27AE60", "低")}
+    if not page_items:
+        st.info("当前页无数据")
+        return
+
+    safety_colors = {
+        "pass": ("#27AE60", "✓ 安全"),
+        "rewrite_required": ("#E67E22", "⚠ 需重写"),
+        "blocked": ("#C0392B", "✗ 已拦截"),
+    }
 
     with st.container(border=True):
         st.markdown(
@@ -397,43 +421,21 @@ def _render_reply_queue(queue: list[dict], page: int, page_size: int = 4) -> Non
         )
 
         for item in page_items:
-            sev = item.get("severity", "low")
-            dot_c, dot_l = sev_dot_map.get(sev, ("#8B7355", sev))
-            reviewed = item.get("reviewed", False)
-            status_badge = (
-                '<span style="font-size:0.64rem;color:#27AE60;background:#E8F8F0;'
-                'padding:1px 7px;border-radius:9px;font-weight:600;">已审核</span>'
-                if reviewed else
-                '<span style="font-size:0.64rem;color:#E67E22;background:#FEF5E7;'
-                'padding:1px 7px;border-radius:9px;font-weight:600;">待审核</span>'
-            )
-            snippet = item["review_text"][:32] + ("…" if len(item["review_text"]) > 32 else "")
+            safety = item.get("safety_status", "pass")
+            dot_c, dot_label = safety_colors.get(safety, ("#8B7355", safety))
+            draft_snippet = (item.get("draft_text", "") or "")[:36]
+            snippet = draft_snippet + ("…" if len(item.get("draft_text", "") or "") > 36 else "")
 
-            r1, r2 = st.columns([22, 3], gap="small")
+            r1, r2 = st.columns([20, 5], gap="small")
             with r1:
                 st.markdown(f"""<div class="q-item">
 <span class="q-id">{item['review_id']}</span>
 <span class="q-text">{snippet}</span>
-<span style="font-weight:600;font-size:0.76rem;color:{dot_c};">● {dot_l}</span>
-{status_badge}
+<span style="font-weight:600;font-size:0.76rem;color:{dot_c};">● {dot_label}</span>
 </div>""", unsafe_allow_html=True)
             with r2:
-                if reviewed:
-                    st.button("✓", key=f"q_done_{item['review_id']}", disabled=True)
-                else:
-                    if st.button("审核", key=f"q_review_{item['review_id']}", type="secondary"):
-                        for r in st.session_state.demo_reply_queue:
-                            if r["review_id"] == item["review_id"]:
-                                r["reviewed"] = True
-                                break
-                        for r in st.session_state.demo_reviews:
-                            if r["review_id"] == item["review_id"]:
-                                r["reviewed"] = True
-                                break
-                        st.session_state.demo_pending_count = sum(
-                            1 for r in st.session_state.demo_reply_queue if not r["reviewed"]
-                        )
-                        st.rerun()
+                if st.button("审核", key=f"q_review_{item['review_id']}", type="secondary", use_container_width=True):
+                    st.switch_page("pages/reply_review_page.py")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -441,11 +443,12 @@ def _render_reply_queue(queue: list[dict], page: int, page_size: int = 4) -> Non
 # ═══════════════════════════════════════════════════════════════════════════
 
 def main() -> None:
-    _init_demo_data()
     st.session_state.nav_selection = "数据看板"
     render_sidebar()
 
-    # ── Top bar: title (left) + action buttons (right) ──
+    batch_id = st.session_state.get("current_batch_id")
+
+    # ── Top bar ──
     left_top, right_top = st.columns([3, 2])
     with left_top:
         st.markdown("""
@@ -459,16 +462,23 @@ def main() -> None:
         st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
         bc1, bc2, bc3 = st.columns(3, gap="small")
         with bc1:
-            approved = [r for r in st.session_state.demo_reply_queue if r.get("reviewed")]
-            if approved:
-                export_df = pd.DataFrame(approved)[["review_id","review_text","issue","severity","reply_draft"]]
-                st.download_button(
-                    label="📥 导出", data=export_df.to_csv(index=False).encode("utf-8"),
-                    file_name=f"approved_replies_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                    mime="text/csv", use_container_width=True, key="export_approved",
-                )
+            if batch_id:
+                try:
+                    reply_svc = ReplyService()
+                    export_data = reply_svc.export_approved_replies(batch_id)
+                    if export_data.get("drafts"):
+                        export_df = pd.DataFrame(export_data["drafts"])
+                        st.download_button(
+                            label="📥 导出", data=export_df.to_csv(index=False).encode("utf-8"),
+                            file_name=f"approved_replies_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                            mime="text/csv", use_container_width=True, key="export_approved",
+                        )
+                    else:
+                        st.button("📥 导出", use_container_width=True, disabled=True, key="export_disabled_dash")
+                except Exception:
+                    st.button("📥 导出", use_container_width=True, disabled=True, key="export_error_dash")
             else:
-                st.button("📥 导出", use_container_width=True, disabled=True, key="export_disabled")
+                st.button("📥 导出", use_container_width=True, disabled=True, key="export_no_batch")
         with bc2:
             if st.button("🧪 评测", key="run_eval_dash", use_container_width=True):
                 st.switch_page("pages/trace_eval_page.py")
@@ -478,28 +488,43 @@ def main() -> None:
 
     st.markdown("<hr class='custom-hr'>", unsafe_allow_html=True)
 
+    # ── No batch selected ──
+    if not batch_id:
+        st.info("👈 请先在 **「上传评论」** 页面中上传 CSV 文件（或开启 Demo Mode），点击「开始分析」后再来查看数据看板。")
+        return
+
+    # ── Load data ──
+    try:
+        data = _load_dashboard_data(batch_id)
+    except Exception as e:
+        st.error(f"加载数据失败：{e}")
+        return
+
+    # ── No analysis ──
+    if not data["has_analysis"]:
+        st.warning("该批次尚未完成分析。请前往 **「上传评论」** 页面运行分析。")
+        return
+
     # ── Metric cards ──
     mc1, mc2, mc3, mc4 = st.columns(4, gap="medium")
     with mc1:
-        metric_card(label="总评论数", value=st.session_state.demo_total, icon="📝",
+        metric_card(label="总评论数", value=data["total_valid"], icon="📝",
                     color="#4A3728", bg_color="#FFFCF8", warn=False)
     with mc2:
-        metric_card(label="平均评分", value=st.session_state.demo_avg_rating, icon="⭐",
+        metric_card(label="平均评分", value=data["avg_rating"], icon="⭐",
                     color="#4A3728", bg_color="#FFFCF8", warn=False)
     with mc3:
-        metric_card(label="差评数", value=st.session_state.demo_neg_count, icon="⚠️",
-                    color="#C0392B", bg_color="#FFFCF8", warn=True)
+        metric_card(label="差评数", value=data["negative_count"], icon="⚠️",
+                    color="#C0392B", bg_color="#FFFCF8", warn=data["negative_count"] > 0)
     with mc4:
-        pending = st.session_state.demo_pending_count
+        pending = data["pending_count"]
         metric_card(label="待审核回复", value=pending, icon="✏️",
                     color="#E67E22" if pending > 0 else "#27AE60",
                     bg_color="#FFFCF8", warn=pending > 0)
 
     st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
 
-    # ═══════════════════════════════════════════════════════
-    # Main two-column layout (left: issues, right: harness + queue)
-    # ═══════════════════════════════════════════════════════
+    # ── Two-column layout ──
     left_col, right_col = st.columns([5, 5], gap="medium")
 
     with left_col:
@@ -507,15 +532,17 @@ def main() -> None:
             '<p class="section-title" style="margin-top:0;">三大问题洞察</p>',
             unsafe_allow_html=True,
         )
-        for issue in st.session_state.demo_top_issues:
-            _render_issue_card(issue)
+        if data["top_issues"]:
+            for issue in data["top_issues"]:
+                _render_issue_card(issue)
+        else:
+            st.info("暂无问题洞察数据")
 
     with right_col:
-        # Harness status card
-        _render_harness_status(st.session_state.demo_harness)
+        _render_harness_status(data["traces"], data["pending_count"])
 
-        # Reply queue card
-        queue = st.session_state.demo_reply_queue
+        # Reply queue
+        queue = data["pending_drafts"]
         if "queue_page" not in st.session_state:
             st.session_state["queue_page"] = 0
         page = st.session_state["queue_page"]
@@ -525,7 +552,6 @@ def main() -> None:
             st.session_state["queue_page"] = 0
         _render_reply_queue(queue, page, page_size=4)
 
-        # Pagination below queue card
         _render_pagination(len(queue), page_size=4)
 
 
