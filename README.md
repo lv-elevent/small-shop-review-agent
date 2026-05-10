@@ -34,6 +34,27 @@ streamlit run apps/streamlit_app/app.py
 
 浏览器打开 `http://localhost:8501`，即可进入 Demo Mode 体验完整流程。
 
+## 运行模式
+
+本项目支持两种运行模式：
+
+### Demo Mode（默认）
+- **默认启用**，无需任何 API 配置，开箱即用
+- 使用内置 15 条示例评论数据
+- 不依赖网络、不依赖 API key、不依赖真实 LLM
+- 适合：本地开发、面试演示、项目答辩
+
+### Live Mode
+- 需手动配置环境变量，连接真实 LLM 服务
+- **必填环境变量**：
+  - `LLM_MODE=live`
+  - `OPENAI_API_KEY` — 您的 OpenAI API 密钥
+  - `OPENAI_MODEL` — 模型名称（如 `gpt-4o-mini`、`gpt-3.5-turbo`）
+- **可选环境变量**：
+  - `OPENAI_BASE_URL` — 自定义 OpenAI 兼容接口地址（默认 `https://api.openai.com/v1`）
+
+> ⚠️ **强制警告**：未配置有效 `OPENAI_API_KEY` 时，禁止运行 Live Mode。Live Mode 仅在 `LLM_MODE=live` 且 `OPENAI_API_KEY` 已正确配置时可用。
+
 ## Demo Mode
 
 Demo Mode 是本项目的一等公民模式，**不依赖网络、不依赖 API key、不依赖真实 LLM**。
