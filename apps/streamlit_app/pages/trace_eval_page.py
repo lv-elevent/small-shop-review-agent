@@ -18,7 +18,10 @@ if str(_PROJECT_ROOT) not in sys.path:
 from apps.streamlit_app.components.sidebar import render_sidebar
 from small_shop_agent.services.trace_service import TraceService
 from small_shop_agent.services.eval_service import EvalService
-from small_shop_agent.storage.database import execute_migrations
+from small_shop_agent.services.insight_service import InsightService
+from small_shop_agent.services.reply_service import ReplyService
+from small_shop_agent.storage.database import execute_migrations, get_connection
+from small_shop_agent.exports.report_exporter import generate_report
 
 execute_migrations()
 
@@ -190,6 +193,29 @@ def _step_cn(name: str) -> str:
     return _STEP_NAME_CN.get(name, name)
 
 
+def _translate_detail(raw: str) -> str:
+    """Translate common English trace output_summary fragments to Chinese."""
+    import re
+    s = raw
+    s = re.sub(r"(\d+) valid reviews?", r"\1 条有效评论", s)
+    s = re.sub(r"(\d+) raw reviews?", r"\1 条原始评论", s)
+    s = re.sub(r"(\d+) pass, (\d+) rewrite_required, (\d+) blocked",
+               r"通过 \1 条，需重写 \2 条，拦截 \3 条", s)
+    s = re.sub(r"(\d+) evidence; (\d+) valid, (\d+) rejected/insufficient",
+               r"共 \1 条证据；\2 条有效，\3 条不足", s)
+    s = re.sub(r"(\d+) evidence records across (\d+) issues",
+               r"\1 条证据记录（\2 个问题）", s)
+    s = re.sub(r"(\d+) reviews", r"\1 条评论", s)
+    s = re.sub(r"(\d+) classified", r"\1 条已分类", s)
+    s = re.sub(r"(\d+) analyzed", r"\1 条已分析", s)
+    s = re.sub(r"(\d+) drafts", r"\1 条草稿", s)
+    s = re.sub(r"(\d+) insights", r"\1 个洞察", s)
+    s = re.sub(r"(\d+) evidence", r"\1 条证据", s)
+    s = re.sub(r"(\d+) negative candidates", r"\1 条差评", s)
+    s = re.sub(r"(\d+) drafts generated", r"\1 条草稿已生成", s)
+    return s
+
+
 def _status_dot_color(status: str) -> str:
     return {
         "passed": "#27AE60", "warning": "#E67E22",
@@ -227,6 +253,11 @@ def main() -> None:
     trace_svc = TraceService()
     eval_svc = EvalService()
     batch_id = st.session_state.get("current_batch_id")
+    if not batch_id:
+        qp_bid = st.query_params.get("batch_id")
+        if qp_bid:
+            st.session_state.current_batch_id = qp_bid
+            batch_id = qp_bid
 
     # ── Title ──
     st.markdown("""
@@ -271,49 +302,104 @@ def main() -> None:
 
     # ═══════ LEFT: Trace Log ═══════
     with left:
+        # Build ordered step list: workflow trace steps + approval + eval
+        workflow_order = [
+            "input_validation", "data_cleaning", "classification",
+            "sentiment_analysis", "issue_aggregation", "evidence_check",
+            "reply_drafting", "safety_check",
+        ]
+        trace_map: dict[str, dict] = {t["step_name"]: t for t in traces}
+        ordered_steps: list[dict] = []
+        for step_name in workflow_order:
+            t = trace_map.get(step_name)
+            if t:
+                ordered_steps.append(t)
+
+        # Check for approval actions
+        approval_exists = False
+        approval_count = 0
+        try:
+            from small_shop_agent.storage.database import get_connection
+            with get_connection() as conn:
+                ac = conn.execute(
+                    "SELECT COUNT(*) as cnt FROM approval_actions WHERE batch_id = ?",
+                    (batch_id,),
+                ).fetchone()
+                if ac and ac["cnt"] > 0:
+                    approval_exists = True
+                    approval_count = ac["cnt"]
+        except Exception:
+            pass
+
+        # Check for eval results
+        eval_exists = latest_eval is not None
+
         st.markdown(
             '<div class="section-card">'
             '<p class="section-title-sm">📋 追踪日志</p>'
-            '<p style="font-size:0.78rem;color:#A09080;margin:-8px 0 12px 0;">'
-            '最近一次工作流执行记录 · 共 ' + str(len(traces)) + ' 个步骤</p>',
+            '<p style="font-size:0.78rem;color:#A09080;margin:-8px 0 14px 0;">'
+            f'工作流执行记录 · 共 {len(ordered_steps)} 个步骤</p>',
             unsafe_allow_html=True,
         )
 
-        # ── Flow timeline visualization ──
-        flow_names = [_step_cn(t["step_name"]) for t in traces]
-        flow_statuses = [t["status"] for t in traces]
-        flow_html = '<div style="display:flex;align-items:center;gap:0;flex-wrap:wrap;padding:6px 0 12px 0;">'
-        for i, (name, sts) in enumerate(zip(flow_names, flow_statuses)):
-            dot_c = _status_dot_color(sts)
-            flow_html += (
-                f'<span style="display:flex;align-items:center;gap:4px;'
-                f'font-size:0.72rem;color:#6B5B4F;white-space:nowrap;">'
-                f'<span style="width:7px;height:7px;border-radius:50%;'
-                f'background:{dot_c};display:inline-block;"></span>'
-                f'{name}</span>'
-            )
-            if i < len(flow_names) - 1:
-                flow_html += '<span style="color:#D4C4B0;margin:0 6px;">→</span>'
-        flow_html += '</div>'
-        st.markdown(flow_html, unsafe_allow_html=True)
-
-        # ── Trace event rows ──
-        for t in traces:
+        # ── Step cards ──
+        step_num = 0
+        for t in ordered_steps:
+            step_num += 1
             sts = t["status"]
             dot_c = _status_dot_color(sts)
             time_str = _fmt_time(t.get("created_at", ""))
-            detail_parts = [t.get("input_summary", ""), t.get("output_summary", "")]
+            detail_parts = [_translate_detail(t.get("input_summary", "")),
+                          _translate_detail(t.get("output_summary", ""))]
             latency = t.get("latency_ms", 0)
             if latency:
-                detail_parts.append(f"({latency}ms)")
+                detail_parts.append(f"耗时 {latency}ms")
             detail = " → ".join(p for p in detail_parts if p)
 
             st.markdown(f"""<div class="tr-row has-left-bar" style="border-left-color:{dot_c};">
+<span style="font-weight:700;font-size:0.82rem;color:#4A3728;min-width:24px;">#{step_num}</span>
 <span class="tr-status-dot" style="background:{dot_c};"></span>
-<span class="tr-time">{time_str}</span>
 <span class="tr-step">{_step_cn(t['step_name'])}</span>
 <span class="tr-detail">{detail}</span>
 <span>{_status_badge(sts)}</span>
+</div>""", unsafe_allow_html=True)
+
+        # ── Approval step card ──
+        step_num += 1
+        if approval_exists:
+            ap_dot = "#27AE60"
+            ap_status = "passed"
+            ap_label = f"已审批 {approval_count} 条"
+        else:
+            ap_dot = "#8B7355"
+            ap_status = "pending"
+            ap_label = "暂无审批记录"
+        st.markdown(f"""<div class="tr-row has-left-bar" style="border-left-color:{ap_dot};">
+<span style="font-weight:700;font-size:0.82rem;color:#4A3728;min-width:24px;">#{step_num}</span>
+<span class="tr-status-dot" style="background:{ap_dot};"></span>
+<span class="tr-step">人工审批</span>
+<span class="tr-detail">{ap_label}</span>
+<span>{_status_badge(ap_status)}</span>
+</div>""", unsafe_allow_html=True)
+
+        # ── Eval step card ──
+        step_num += 1
+        if eval_exists:
+            ev_dot = "#27AE60"
+            ev_status = "passed"
+            ta = latest_eval.get("topic_accuracy", 0)
+            sa = latest_eval.get("sentiment_accuracy", 0)
+            ev_label = f"分类准确率 {ta:.0%}，情绪准确率 {sa:.0%}"
+        else:
+            ev_dot = "#8B7355"
+            ev_status = "pending"
+            ev_label = "尚未运行评测"
+        st.markdown(f"""<div class="tr-row has-left-bar" style="border-left-color:{ev_dot};">
+<span style="font-weight:700;font-size:0.82rem;color:#4A3728;min-width:24px;">#{step_num}</span>
+<span class="tr-status-dot" style="background:{ev_dot};"></span>
+<span class="tr-step">评测运行</span>
+<span class="tr-detail">{ev_label}</span>
+<span>{_status_badge(ev_status)}</span>
 </div>""", unsafe_allow_html=True)
 
         st.markdown('</div>', unsafe_allow_html=True)
@@ -333,6 +419,8 @@ def main() -> None:
             schema_fail = latest_eval.get("schema_failure_count", 0)
             total_cases = latest_eval.get("total_eval_cases", 0)
             composite = round((ta + sa) / 2, 2)
+            if total_cases == 0:
+                st.warning("评测基准不匹配：当前批次评论ID与内置基准数据（示例CSV）不一致，无法计算准确率。请使用 Demo 模式运行示例数据后再评测。")
         else:
             ta = sa = composite = 0
             unsafe = schema_fail = total_cases = 0
@@ -368,7 +456,7 @@ def main() -> None:
             st.markdown(
                 f'<div class="ev-metric">'
                 f'<div class="ev-value" style="color:{sc};">{schema_fail}</div>'
-                f'<div class="ev-label">Schema 失败</div></div>',
+                f'<div class="ev-label">结构校验失败</div></div>',
                 unsafe_allow_html=True,
             )
         with mr5:
@@ -430,7 +518,7 @@ def main() -> None:
 
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # ── Run Eval button ──
+        # ── Action buttons ──
         st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
         bc1, bc2, bc3 = st.columns([2, 2, 2])
         with bc1:
@@ -443,11 +531,75 @@ def main() -> None:
                 else:
                     st.toast(f"❌ 评测失败：{result.get('error', '')}", icon="❌")
         with bc2:
-            st.button("📥 导出报告", key="export_eval", use_container_width=True, type="secondary",
-                      disabled=True)
+            if traces:
+                try:
+                    insight_svc = InsightService()
+                    reply_svc = ReplyService()
+                    top_issues = insight_svc.get_top_issues(batch_id)
+                    batch_info: dict = {}
+                    with get_connection() as conn:
+                        b = conn.execute(
+                            "SELECT * FROM review_batches WHERE batch_id = ?",
+                            (batch_id,),
+                        ).fetchone()
+                        if b:
+                            batch_info = dict(b)
+                        avg_row = conn.execute(
+                            "SELECT AVG(CAST(rating AS REAL)) as avg_r FROM reviews WHERE batch_id = ? AND is_valid = 1",
+                            (batch_id,),
+                        ).fetchone()
+                        batch_info["avg_rating"] = round(avg_row["avg_r"], 1) if avg_row and avg_row["avg_r"] else 0
+                        neg_row = conn.execute(
+                            "SELECT COUNT(*) as cnt FROM review_analysis WHERE batch_id = ? AND is_negative_candidate = 1",
+                            (batch_id,),
+                        ).fetchone()
+                        batch_info["negative_count"] = neg_row["cnt"] if neg_row else 0
+                        pending_row = conn.execute(
+                            "SELECT COUNT(*) as cnt FROM reply_drafts WHERE batch_id = ? AND approval_status = 'pending'",
+                            (batch_id,),
+                        ).fetchone()
+                        batch_info["pending_count"] = pending_row["cnt"] if pending_row else 0
+                    drafts = reply_svc._reply_repo.list_drafts(batch_id)
+                    report_text = generate_report(
+                        batch_id=batch_id,
+                        batch_info=batch_info,
+                        top_issues=top_issues,
+                        traces=traces,
+                        eval_result=latest_eval,
+                        drafts=drafts,
+                    )
+                    st.download_button(
+                        "📥 导出报告", data=report_text,
+                        file_name=f"trace_eval_report_{batch_id}.md",
+                        mime="text/markdown", use_container_width=True, type="secondary",
+                        key="export_eval_btn",
+                    )
+                except Exception:
+                    st.button("📥 导出报告", key="export_eval", use_container_width=True,
+                              type="secondary", disabled=True,
+                              help="导出报告生成失败")
+            else:
+                st.button("📥 导出报告", key="export_eval", use_container_width=True,
+                          type="secondary", disabled=True,
+                          help="请先运行分析后再导出")
         with bc3:
-            st.button("📋 复制 Trace", key="copy_trace", use_container_width=True, type="secondary",
-                      disabled=True)
+            _status_text = {"passed": "✓", "warning": "⚠", "failed": "✗", "pending": "◷"}
+            trace_text_lines = []
+            for t in traces:
+                sts = t["status"]
+                trace_text_lines.append(
+                    f"[{_status_text.get(sts, sts)}] {_step_cn(t['step_name'])} | "
+                    f"输入: {_translate_detail(t.get('input_summary', '-'))} | "
+                    f"输出: {_translate_detail(t.get('output_summary', '-'))} | "
+                    f"耗时: {t.get('latency_ms', 0)}ms"
+                )
+            trace_text = "\n".join(trace_text_lines)
+            with st.popover("📋 复制 Trace", use_container_width=True):
+                if trace_text:
+                    st.code(trace_text, language=None)
+                    st.caption("👆 选中上方文本即可复制")
+                else:
+                    st.info("暂无追踪数据")
 
 
 if __name__ == "__main__":

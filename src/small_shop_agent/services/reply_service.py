@@ -7,6 +7,7 @@ from loguru import logger
 
 from small_shop_agent.storage.repositories.reply_repository import ReplyRepository
 from small_shop_agent.storage.repositories.trace_repository import TraceRepository
+from small_shop_agent.services.types import ApprovalResult, ExportResult
 
 
 class ReplyService:
@@ -28,7 +29,7 @@ class ReplyService:
 
     # ── Approval Actions ────────────────────────────────────────────────────
 
-    def approve_draft(self, draft_id: int) -> dict[str, Any]:
+    def approve_draft(self, draft_id: int) -> ApprovalResult:
         """
         Approve a draft for publishing.
         Only allowed when safety_status is 'pass'.
@@ -75,7 +76,7 @@ class ReplyService:
         logger.success(f"Draft {draft_id} ({draft['review_id']}) approved.")
         return {"success": True, "draft": updated, "error": None}
 
-    def edit_draft(self, draft_id: int, edited_text: str) -> dict[str, Any]:
+    def edit_draft(self, draft_id: int, edited_text: str) -> ApprovalResult:
         """
         Edit a draft's text and mark as 'edited'.
         edited_text must not be empty.
@@ -116,7 +117,7 @@ class ReplyService:
         logger.success(f"Draft {draft_id} ({draft['review_id']}) edited.")
         return {"success": True, "draft": updated, "error": None}
 
-    def reject_draft(self, draft_id: int, reason: str = "") -> dict[str, Any]:
+    def reject_draft(self, draft_id: int, reason: str = "") -> ApprovalResult:
         """Reject a draft so it will not be published."""
         draft = self._reply_repo.get_draft_detail(draft_id)
         if draft is None:
@@ -154,12 +155,16 @@ class ReplyService:
 
     # ── Export ──────────────────────────────────────────────────────────────
 
-    def export_approved_replies(self, batch_id: str) -> dict[str, Any]:
-        """Return all approved/edited drafts ready for publishing."""
+    def export_approved_replies(self, batch_id: str) -> ExportResult:
+        """Return all approved/edited drafts ready for publishing, with CSV data."""
+        from small_shop_agent.exports.approved_replies_exporter import (
+            export_approved_replies_csv,
+        )
         all_drafts = self._reply_repo.list_drafts(batch_id)
         approved = [d for d in all_drafts if d["approval_status"] in ("approved", "edited")]
         return {
             "batch_id": batch_id,
             "drafts": approved,
             "count": len(approved),
+            "csv_data": export_approved_replies_csv(batch_id),
         }

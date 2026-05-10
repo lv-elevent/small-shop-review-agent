@@ -15,6 +15,7 @@ from small_shop_agent.storage.repositories.trace_repository import TraceReposito
 from small_shop_agent.harness.input.input_contracts import REQUIRED_COLUMNS
 from small_shop_agent.harness.input.csv_validator import validate_csv_schema, validate_and_clean
 from small_shop_agent.core.time_utils import now_iso
+from small_shop_agent.services.types import BatchCreateResult, CsvValidateResult
 
 _ENCODINGS = ["utf-8", "utf-8-sig", "gbk", "gb2312", "gb18030", "latin-1"]
 
@@ -54,7 +55,7 @@ class ReviewService:
     # ── Public API ──────────────────────────────────────────────────────────
 
     def validate_csv(self, file_source: str | Path | IO[bytes] | bytes,
-                     file_name: str = "") -> dict:
+                     file_name: str = "") -> CsvValidateResult:
         """Validate a CSV file without persisting. Returns structured result."""
         df, err = _read_csv(file_source, file_name)
         if err is not None:
@@ -77,7 +78,7 @@ class ReviewService:
         file_source: str | Path | IO[bytes] | bytes,
         store_type: str = "coffee_shop",
         file_name: str = "",
-    ) -> dict:
+    ) -> BatchCreateResult:
         """
         Full CSV ingestion pipeline:
         1. Read CSV

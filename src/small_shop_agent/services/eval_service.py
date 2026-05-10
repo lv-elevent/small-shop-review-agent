@@ -11,8 +11,41 @@ from small_shop_agent.storage.repositories.batch_repository import BatchReposito
 from small_shop_agent.storage.repositories.analysis_repository import AnalysisRepository
 from small_shop_agent.storage.repositories.reply_repository import ReplyRepository
 from small_shop_agent.storage.repositories.trace_repository import TraceRepository
+from small_shop_agent.storage.repositories.review_repository import ReviewRepository
 from small_shop_agent.evals.eval_runner import run_full_eval
 from small_shop_agent.demo.demo_loader import DemoLoader
+from small_shop_agent.services.types import EvalResult
+
+
+def _rule_topic(review: dict) -> str:
+    """Keyword-based topic classification fallback for eval ground truth."""
+    text = str(review.get("review_text", review.get("cleaned_text", ""))).lower()
+    if any(kw in text for kw in ["卫生", "脏", "虫", "异味", "异物", "头发"]):
+        return "hygiene"
+    if any(kw in text for kw in ["等", "排队", "太慢", "半小时", "20分钟", "太久"]):
+        return "waiting_time"
+    if any(kw in text for kw in ["服务", "态度", "员工", "服务员", "店员"]):
+        return "service"
+    if any(kw in text for kw in ["价格", "贵", "不值", "太贵"]):
+        return "price"
+    if any(kw in text for kw in ["环境", "装修", "座位", "吵", "安静"]):
+        return "environment"
+    if "咖啡" in text or "味道" in text or "口感" in text:
+        return "product"
+    rating = int(review.get("rating", 3))
+    if rating <= 2:
+        return "waiting_time"
+    return "other"
+
+
+def _rule_sentiment(review: dict) -> str:
+    """Rating-based sentiment fallback for eval ground truth."""
+    rating = int(review.get("rating", 3))
+    if rating <= 2:
+        return "negative"
+    if rating == 3:
+        return "neutral"
+    return "positive"
 
 
 class EvalService:
@@ -24,9 +57,10 @@ class EvalService:
         self._analysis_repo = AnalysisRepository()
         self._reply_repo = ReplyRepository()
         self._trace_repo = TraceRepository()
+        self._review_repo = ReviewRepository()
         self._demo_loader = DemoLoader()
 
-    def run_eval(self, eval_config: dict[str, Any] | None = None) -> dict[str, Any]:
+    def run_eval(self, eval_config: dict[str, Any] | None = None) -> EvalResult:
         """
         Run rule-based evaluation against the latest analyzed batch.
 
@@ -54,7 +88,7 @@ class EvalService:
         drafts = self._reply_repo.list_drafts(batch_id)
         traces = self._trace_repo.get_traces(batch_id)
 
-        # Build ground truth from mock data
+        # Build ground truth — prefer demo mock data, fall back to rule-based
         mock_class = self._demo_loader.load_mock_classification()
         mock_sent = self._demo_loader.load_mock_sentiment()
 
@@ -65,8 +99,28 @@ class EvalService:
             e["review_id"]: e["sentiment"] for e in mock_sent
         }
 
+        # Fill missing ground truth with rule-based defaults from review data
+        reviews = self._review_repo.list_reviews(batch_id, is_valid=True)
+        for r in reviews:
+            rid = r["review_id"]
+            if rid not in topic_gt:
+                topic_gt[rid] = _rule_topic(r)
+            if rid not in sentiment_gt:
+                sentiment_gt[rid] = _rule_sentiment(r)
+
         # Run eval
         report = run_full_eval(analysis, drafts, traces, topic_gt, sentiment_gt)
+
+        # No matching cases at all — shouldn't happen with rule-based fallback
+        if report["total_eval_cases"] == 0:
+            logger.warning(f"Eval {eval_run_id}: 0 eval cases after rule-based fallback.")
+            return {
+                "success": False,
+                "eval_run_id": eval_run_id,
+                "batch_id": batch_id,
+                "report": report,
+                "error": "无法生成评测基准数据，请检查评论数据是否有效。",
+            }
 
         # Persist to DB
         self._eval_repo.save_eval_result(

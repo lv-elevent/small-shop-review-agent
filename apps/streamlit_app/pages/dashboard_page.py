@@ -200,6 +200,19 @@ _EVIDENCE_STATUS_CN: dict[str, str] = {
     "weak": "证据较弱",
 }
 
+_TOPIC_CN: dict[str, str] = {
+    "hygiene": "卫生", "waiting_time": "等待时间", "service": "服务",
+    "product": "产品", "environment": "环境", "price": "价格", "other": "其他",
+}
+
+
+def _cn_topic(raw: str) -> str:
+    """Convert a raw issue_name to Chinese if it contains English topic keys."""
+    result = raw
+    for en, cn in _TOPIC_CN.items():
+        result = result.replace(en, cn)
+    return result
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Data Loading
@@ -319,7 +332,7 @@ def _render_issue_card(issue: dict) -> None:
 <span class="issue-num">问题 #{issue['rank']}</span>
 <span class="sev-dot" style="color:{sev_color};">● {sev_label}严重</span>
 </div>
-<div class="issue-title">{issue['issue_name']}</div>
+<div class="issue-title">{_cn_topic(issue['issue_name'])}</div>
 <div class="issue-stats">
 <span>提及 <b>{issue['mention_count']}</b> 次</span>
 <span>证据 <b>{issue['evidence_count']}</b> 条 · {_EVIDENCE_STATUS_CN.get(issue.get('evidence_status', ''), issue.get('evidence_status', '—'))}</span>
@@ -334,6 +347,29 @@ def _render_issue_card(issue: dict) -> None:
 # Component: Harness Status (derived from traces)
 # ═══════════════════════════════════════════════════════════════════════════
 
+def _translate_detail(raw: str) -> str:
+    """Translate common English trace output_summary fragments to Chinese."""
+    import re
+    s = raw
+    s = re.sub(r"(\d+) valid reviews?", r"\1 条有效评论", s)
+    s = re.sub(r"(\d+) raw reviews?", r"\1 条原始评论", s)
+    s = s.replace("verified; no duplicates detected", "已校验；未发现重复")
+    s = re.sub(r"(\d+) pass, (\d+) rewrite_required, (\d+) blocked",
+               r"通过 \1 条，需重写 \2 条，拦截 \3 条", s)
+    s = re.sub(r"(\d+) evidence; (\d+) valid, (\d+) rejected/insufficient",
+               r"共 \1 条证据；\2 条有效，\3 条不足", s)
+    s = re.sub(r"(\d+) evidence records across (\d+) issues",
+               r"\1 条证据记录（\2 个问题）", s)
+    s = re.sub(r"(\d+) reviews", r"\1 条评论", s)
+    s = re.sub(r"(\d+) classified", r"\1 条已分类", s)
+    s = re.sub(r"(\d+) analyzed", r"\1 条已分析", s)
+    s = re.sub(r"(\d+) drafts", r"\1 条草稿", s)
+    s = re.sub(r"(\d+) insights", r"\1 个洞察", s)
+    s = re.sub(r"(\d+) evidence", r"\1 条证据", s)
+    s = re.sub(r"(\d+) negative candidates", r"\1 条差评", s)
+    return s
+
+
 def _render_harness_status(traces: list[dict], pending_count: int) -> None:
     trace_map = {t["step_name"]: t for t in traces}
 
@@ -341,24 +377,24 @@ def _render_harness_status(traces: list[dict], pending_count: int) -> None:
         {
             "name": "输入校验",
             "status": trace_map.get("input_validation", {}).get("status", "pending"),
-            "detail": trace_map.get("input_validation", {}).get("output_summary", "—"),
+            "detail": _translate_detail(trace_map.get("input_validation", {}).get("output_summary", "—")),
         },
         {
             "name": "Schema 约束",
             "status": "passed" if all(
                 t.get("status") != "failed" for t in traces
             ) else "failed",
-            "detail": f"{len(traces)} 个步骤，无 schema 异常",
+            "detail": f"{len(traces)} 个步骤，无结构校验异常",
         },
         {
             "name": "证据绑定",
             "status": trace_map.get("evidence_check", {}).get("status", "pending"),
-            "detail": trace_map.get("evidence_check", {}).get("output_summary", "—"),
+            "detail": _translate_detail(trace_map.get("evidence_check", {}).get("output_summary", "—")),
         },
         {
             "name": "安全检查",
             "status": trace_map.get("safety_check", {}).get("status", "pending"),
-            "detail": trace_map.get("safety_check", {}).get("output_summary", "—"),
+            "detail": _translate_detail(trace_map.get("safety_check", {}).get("output_summary", "—")),
         },
         {
             "name": "人工审批",
@@ -378,7 +414,7 @@ def _render_harness_status(traces: list[dict], pending_count: int) -> None:
 
     html_parts = ['<div class="section-card">',
                   '<p class="section-title">AI 工作流可靠性检查</p>',
-                  '<p style="font-size:0.74rem;color:#A09080;margin:-8px 0 10px 0;">Harness Engine 实时状态</p>']
+                  '<p style="font-size:0.74rem;color:#A09080;margin:-8px 0 10px 0;">防护引擎实时状态</p>']
 
     for check in checks:
         sts = check["status"]
@@ -454,6 +490,12 @@ def main() -> None:
     render_sidebar()
 
     batch_id = st.session_state.get("current_batch_id")
+    # Restore batch_id from URL query params on browser refresh
+    if not batch_id:
+        qp_bid = st.query_params.get("batch_id")
+        if qp_bid:
+            st.session_state.current_batch_id = qp_bid
+            batch_id = qp_bid
 
     # ── Top bar ──
     left_top, right_top = st.columns([3, 2])
@@ -473,10 +515,9 @@ def main() -> None:
                 try:
                     reply_svc = ReplyService()
                     export_data = reply_svc.export_approved_replies(batch_id)
-                    if export_data.get("drafts"):
-                        export_df = pd.DataFrame(export_data["drafts"])
+                    if export_data.get("drafts") and export_data.get("csv_data"):
                         st.download_button(
-                            label="📥 导出", data=export_df.to_csv(index=False).encode("utf-8"),
+                            label="📥 导出", data=export_data["csv_data"],
                             file_name=f"approved_replies_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
                             mime="text/csv", use_container_width=True, key="export_approved",
                         )

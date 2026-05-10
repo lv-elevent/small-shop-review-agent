@@ -21,6 +21,7 @@ from small_shop_agent.harness.output.structured_retry import run_with_schema_ret
 from small_shop_agent.harness.evidence.evidence_guard import validate_insight_evidence
 from small_shop_agent.harness.safety.safety_guardrails import check_many_replies
 from small_shop_agent.utils.logger import log_step
+from small_shop_agent.services.types import WorkflowResult, WorkflowStatusResult
 
 
 # ── Private Pydantic models for schema validation (do NOT modify schemas/) ──
@@ -90,7 +91,7 @@ class WorkflowService:
 
     # ── Public API ──────────────────────────────────────────────────────────
 
-    def run_analysis(self, batch_id: str, mode: str = "demo") -> dict[str, Any]:
+    def run_analysis(self, batch_id: str, mode: str = "demo") -> WorkflowResult:
         """Run the analysis pipeline. 'demo'/'mock' uses MockProvider; 'live'/'openai' uses OpenAI."""
         if mode in ("demo", "mock"):
             return self.run_demo_analysis(batch_id)
@@ -104,7 +105,7 @@ class WorkflowService:
             }
         return self._run_provider_analysis(batch_id, provider, mode)
 
-    def run_demo_analysis(self, batch_id: str) -> dict[str, Any]:
+    def run_demo_analysis(self, batch_id: str) -> WorkflowResult:
         """
         Execute the full demo analysis pipeline:
 
@@ -389,7 +390,7 @@ class WorkflowService:
 
     def _run_provider_analysis(
         self, batch_id: str, provider: BaseLLMProvider, mode: str
-    ) -> dict[str, Any]:
+    ) -> WorkflowResult:
         """8-step analysis pipeline wired to Schema Guard + Structured Retry +
         Evidence Guard + Safety Guardrails. Never crashes — uses fallbacks."""
         t_start = time.time()
@@ -869,7 +870,7 @@ class WorkflowService:
 
     # ── Public API (continued) ───────────────────────────────────────────────
 
-    def get_workflow_status(self, batch_id: str) -> dict[str, Any]:
+    def get_workflow_status(self, batch_id: str) -> WorkflowStatusResult:
         """Return batch status, trace summary, and data counts."""
         batch = self._batch_repo.get_batch(batch_id)
         if batch is None:

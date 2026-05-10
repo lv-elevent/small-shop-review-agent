@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from small_shop_agent.storage.repositories.reply_repository import ReplyRepository
+from small_shop_agent.services.types import ApprovalActionResult
 
 
 class ApprovalService:
@@ -22,7 +23,7 @@ class ApprovalService:
         before_text: str = "",
         after_text: str = "",
         reject_reason: str = "",
-    ) -> dict[str, Any]:
+    ) -> ApprovalActionResult:
         """Record a single approval action (approve/edit/reject)."""
         return self._repo.insert_approval_action(
             draft_id=draft_id,
