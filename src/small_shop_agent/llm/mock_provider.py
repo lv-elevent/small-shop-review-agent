@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from small_shop_agent.demo.demo_loader import DemoLoader
+from small_shop_agent.harness.verification.fallback_rules import classify_by_keywords
 from small_shop_agent.llm.base import BaseLLMProvider
 
 
@@ -40,6 +41,25 @@ class MockProvider(BaseLLMProvider):
             ),
             "COFF12": ("pass", [], "回复真诚致歉并给出改进承诺，语气克制。"),
             "COFF13": ("pass", [], "回复具体承认了卫生问题并给出了整改措施，语气得当。"),
+        }
+
+        # Semantic safety mapping: review_id → (semantic_status, risk_types, reason, confidence)
+        self._semantic_safety_map: dict[str, tuple[str, list[str], str, float]] = {
+            "COFF04": ("pass", [], "语义分析：回复真诚，语气克制，无安全风险。", 0.95),
+            "COFF06": (
+                "rewrite_required",
+                ["over_promise"],
+                "语义分析：回复中承诺加强培训，但措辞略显过度，建议更聚焦问题本身。",
+                0.82,
+            ),
+            "COFF08": (
+                "blocked",
+                ["fake_fact"],
+                "语义分析：回复暗示已进行调查并确认了问题来源，存在编造事实的风险。",
+                0.91,
+            ),
+            "COFF12": ("pass", [], "语义分析：回复真诚致歉且未发现安全风险。", 0.93),
+            "COFF13": ("pass", [], "语义分析：回复具体且克制，无安全问题。", 0.94),
         }
 
     # ── Public Methods ─────────────────────────────────────────────────
@@ -140,17 +160,35 @@ class MockProvider(BaseLLMProvider):
             results.append(entry)
         return results
 
+    def judge_semantic_safety(self, drafts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Return pre-defined semantic safety results for known review IDs."""
+        results: list[dict[str, Any]] = []
+        for d in drafts:
+            rid = d.get("review_id", "")
+            if rid in self._semantic_safety_map:
+                status, risks, reason, conf = self._semantic_safety_map[rid]
+            else:
+                status, risks, reason, conf = ("pass", [], "Mock — 语义判定未匹配，默认通过。", 0.80)
+            results.append({
+                "reply_id": rid,
+                "semantic_status": status,
+                "risk_types": list(risks),
+                "reason": reason,
+                "confidence": conf,
+            })
+        return results
+
     # ── Deterministic Fallbacks ────────────────────────────────────────
 
     @staticmethod
     def _fallback_classify(review_id: str, rating: int) -> dict[str, Any]:
-        topic = "product" if rating >= 4 else ("other" if rating == 3 else "waiting_time")
+        topic = classify_by_keywords("", rating)
         return {
             "review_id": review_id,
             "topics": [topic],
             "primary_topic": topic,
             "topic_confidence": 0.80,
-            "needs_review": False,
+            "needs_review": rating <= 2,
         }
 
     @staticmethod

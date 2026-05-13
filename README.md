@@ -116,36 +116,62 @@ Demo Mode 是本项目的一等公民模式，**不依赖网络、不依赖 API 
 - 不周报生成
 - 不移动端
 
+## Agent Runtime（高级）
+
+项目支持两种运行时，通过 `WORKFLOW_RUNTIME` 环境变量或 `config.py` 切换：
+
+| 运行时 | 值 | 特点 |
+|--------|-----|------|
+| Pipeline（默认） | `pipeline` | 线性执行，稳定可靠 |
+| Agent Graph | `agent_graph` | 条件路由、重试降级、异步并发 |
+
+Agent Graph 特性：
+- **条件路由**：根据 LLM 输出状态自动决定下一步（retry / fallback / escalate）
+- **工具注入**：`count_by_topic`、`search_reviews`、`lookup_review`、`get_safety_policy_snippet`
+- **记忆检索**：SQLite LIKE 检索历史审批样本，注入回复生成上下文
+- **异步并发**：classification + sentiment 使用 `asyncio.gather` 并发执行
+- **双引擎安全**：Rule Guard + LLM Semantic Judge，分歧自动升级人工
+
+### Ollama 本地模型
+
+```bash
+# 拉取模型
+ollama pull qwen2.5:7b
+
+# 启动
+export LLM_MODE=ollama
+export OLLAMA_MODEL=qwen2.5:7b
+python run_app.py
+```
+
+## 文档
+
+- [AGENT_ARCHITECTURE.md](docs/AGENT_ARCHITECTURE.md) — 系统架构、Agent Runtime、Tool Use、Guardrails、Memory
+- [DEMO_GUIDE.md](docs/DEMO_GUIDE.md) — 逐步演示指南
+- [INTERVIEW_NOTES.md](docs/INTERVIEW_NOTES.md) — 面试/答辩 Notes
+
 ## 常见问题
 
-### 如何初始化数据库？
+### 如何运行测试？
 
 ```bash
-python scripts/init_db.py
+# 全部单元测试
+pytest tests/unit/ -v                # 200+ 个测试
+
+# 端到端验收
+python scripts/e2e_demo_check.py     # 57 项检查
+
+# Agent Graph 模式验收
+python scripts/e2e_demo_check.py --runtime agent_graph
 ```
 
-### 如何运行全部冒烟测试？
+### 数据库如何初始化？
 
 ```bash
-python scripts/smoke_test_repos.py
-python scripts/smoke_test_review_service.py
-python scripts/smoke_test_demo_loader.py
-python scripts/smoke_test_demo_workflow.py
-python scripts/smoke_test_services.py
-python scripts/smoke_test_upload_flow.py
-python scripts/smoke_test_dashboard_data.py
-python scripts/smoke_test_reply_review_flow.py
-python scripts/smoke_test_trace_eval_page_data.py
+# 自动初始化（首次运行 Streamlit 时）
+python run_app.py  # 自动执行 11 个 migration
 ```
 
-### 如何运行端到端验收？
+### 如何重置数据？
 
-```bash
-python scripts/e2e_demo_check.py
-```
-
-这会从零开始完成：初始化 DB → 上传 CSV → 分析 → 审批 → 评测 → 验证 9 张表数据。
-
-### 如何重置 Demo 数据？
-
-重新运行 `python scripts/e2e_demo_check.py` 即可（脚本会在结束后清理测试数据）。如需在 Streamlit 中重置，重启应用并重新上传即可覆盖。
+删除 `data/small_shop.db` 后重启应用即可，或运行 `e2e_demo_check.py` 自动清理。

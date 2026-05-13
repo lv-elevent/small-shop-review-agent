@@ -1,8 +1,11 @@
 """CSV validator — schema check, rating validation, empty detection, duplicate detection."""
 from __future__ import annotations
 
+import uuid
+
 import pandas as pd
 
+from small_shop_agent.core.config import DEFAULT_RATING_WHEN_INVALID
 from small_shop_agent.harness.input.input_contracts import REQUIRED_COLUMNS, RATING_MIN, RATING_MAX
 from small_shop_agent.harness.input.data_cleaner import clean_text
 
@@ -35,6 +38,13 @@ def validate_and_clean(dataframe: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     """
     df = dataframe.copy()
     df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
+
+    # Auto-generate review_id for missing or empty values
+    if "review_id" not in df.columns:
+        df["review_id"] = [f"auto-{uuid.uuid4().hex[:8]}" for _ in range(len(df))]
+    else:
+        mask = df["review_id"].isna() | (df["review_id"].astype(str).str.strip() == "")
+        df.loc[mask, "review_id"] = [f"auto-{uuid.uuid4().hex[:8]}" for _ in range(mask.sum())]
 
     total = len(df)
 
@@ -72,7 +82,7 @@ def validate_and_clean(dataframe: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     valid_count = int(df["is_valid"].sum())
 
     # Clean rating: valid→int 1-5, invalid→3 (neutral, satisfies DB CHECK 1-5)
-    df["rating"] = df["rating_num"].where(rating_ok, 3).fillna(3).astype(int)
+    df["rating"] = df["rating_num"].where(rating_ok, DEFAULT_RATING_WHEN_INVALID).fillna(DEFAULT_RATING_WHEN_INVALID).astype(int)
     df.drop(columns=["rating_num"], inplace=True)
 
     # Convert bool-like columns to int

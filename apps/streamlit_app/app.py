@@ -13,6 +13,17 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+from dotenv import load_dotenv
+load_dotenv(_PROJECT_ROOT / ".env")
+
+from loguru import logger
+import sys as _sys
+logger.remove()
+logger.add(_sys.stderr, level="INFO")
+
+from small_shop_agent.utils.logger import ensure_logger_configured
+ensure_logger_configured()
+
 import streamlit as st
 
 st.set_page_config(

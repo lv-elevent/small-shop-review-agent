@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from small_shop_agent.harness.output.schema_guard import validate_output
+from small_shop_agent.utils.logger import log_step
 
 
 @dataclass
@@ -35,6 +36,7 @@ def run_with_schema_retry(
     many: bool = False,
     max_retries: int = 1,
     fallback_fn: Callable[[], Any] | None = None,
+    batch_id: str = "",
 ) -> StructuredRetryResult:
     """Call call_fn, validate with schema, retry on failure, fallback if exhausted.
 
@@ -44,21 +46,30 @@ def run_with_schema_retry(
         many: Passed through to validate_output.
         max_retries: Extra attempts after the first (default 1 → 2 total calls).
         fallback_fn: Called with no args when all retries fail; output also validated.
+        batch_id: Optional batch ID for structured logging.
 
     Returns:
         StructuredRetryResult — check .ok; .data holds validated model(s).
     """
     errors: list[str] = []
+    bid = batch_id or "unknown"
 
     for attempt in range(1, max_retries + 2):
         try:
             raw = call_fn(attempt=attempt)
         except Exception as exc:
             errors.append(f"Attempt {attempt}: call_fn raised {type(exc).__name__}: {exc}")
+            log_step("structured_retry_attempt", bid, attempt=attempt, ok=False,
+                    error=str(exc))
             continue
 
-        guard_result = validate_output(raw, schema_cls, many=many)
+        guard_result = validate_output(raw, schema_cls, many=many, batch_id=batch_id)
+        log_step("structured_retry_attempt", bid, attempt=attempt,
+                ok=guard_result.ok, valid_count=guard_result.total_valid,
+                invalid_count=guard_result.total_invalid)
         if guard_result.ok:
+            log_step("structured_retry_done", bid, attempts=attempt,
+                    used_fallback=False, ok=True)
             return StructuredRetryResult(
                 ok=True,
                 data=guard_result.validated if many else _first_or_none(guard_result.validated),
@@ -72,17 +83,22 @@ def run_with_schema_retry(
 
     # All attempts exhausted — try fallback
     if fallback_fn is not None:
+        log_step("structured_retry_fallback", bid, attempt=max_retries + 1)
         try:
             raw = fallback_fn()
         except Exception as exc:
             errors.append(f"Fallback: fallback_fn raised {type(exc).__name__}: {exc}")
+            log_step("structured_retry_done", bid, attempts=max_retries + 1,
+                    used_fallback=True, ok=False, error=str(exc))
             return StructuredRetryResult(
                 ok=False, data=None, attempts=max_retries + 1,
                 used_fallback=True, errors=errors, schema_name=schema_cls.__name__,
             )
 
-        guard_result = validate_output(raw, schema_cls, many=many)
+        guard_result = validate_output(raw, schema_cls, many=many, batch_id=batch_id)
         if guard_result.ok:
+            log_step("structured_retry_done", bid, attempts=max_retries + 1,
+                    used_fallback=True, ok=True)
             return StructuredRetryResult(
                 ok=True,
                 data=guard_result.validated if many else _first_or_none(guard_result.validated),
@@ -93,11 +109,15 @@ def run_with_schema_retry(
             )
 
         errors.extend(_fmt_schema_errors(guard_result))
+        log_step("structured_retry_done", bid, attempts=max_retries + 1,
+                used_fallback=True, ok=False)
         return StructuredRetryResult(
             ok=False, data=None, attempts=max_retries + 1,
             used_fallback=True, errors=errors, schema_name=schema_cls.__name__,
         )
 
+    log_step("structured_retry_done", bid, attempts=max_retries + 1,
+            used_fallback=False, ok=False)
     return StructuredRetryResult(
         ok=False, data=None, attempts=max_retries + 1,
         used_fallback=False, errors=errors, schema_name=schema_cls.__name__,

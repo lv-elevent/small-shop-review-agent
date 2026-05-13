@@ -9,14 +9,6 @@ python-dotenv>=1.0         # .env 配置读取
 requests>=2.31             # HTTP 请求
 
 # ===============================
-# SQLite / 数据库操作
-# ===============================
-# sqlite3 已内置，不需要安装
-SQLAlchemy>=2.0            # ORM / DB 访问
-alembic>=1.12               # 数据库迁移
-databases[sqlite]>=0.7.3   # 异步数据库访问可选
-
-# ===============================
 # Streamlit 前端
 # ===============================
 streamlit>=1.26.1          # 前端工作台
@@ -27,19 +19,13 @@ streamlit-aggrid>=0.4.2    # 表格显示增强
 # LLM & Agent Provider
 # ===============================
 openai>=1.29.0             # OpenAI LLM
-ollama>=0.1.0              # Ollama Provider（如果用）
-langchain>=0.1.5           # Agent/Workflow 管理
-langchain-hub>=0.1.0       # Agent 工具注册
-tenacity>=8.2.2            # 重试逻辑
-tiktoken>=0.4.0            # Tokenization
 
 # ===============================
 # 开发/调试/测试工具
 # ===============================
 pytest>=8.0                # 单元测试
 pytest-asyncio>=0.22       # 异步测试
-black>=23.7.0              # 代码格式化
-isort>=6.12.0              # 导入排序
 mypy>=1.5.1                # 类型检查
+ruff>=0.4                  # 代码格式化 & 导入排序
 ipython>=8.15.0            # 交互式调试
 rich>=13.6.0               # 彩色终端日志

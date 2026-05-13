@@ -7,7 +7,22 @@ from loguru import logger
 
 from small_shop_agent.storage.repositories.reply_repository import ReplyRepository
 from small_shop_agent.storage.repositories.trace_repository import TraceRepository
+from small_shop_agent.storage.repositories.memory_repository import MemoryRepository
 from small_shop_agent.services.types import ApprovalResult, ExportResult
+
+_MEMO_STORE = "coffee_shop"
+
+
+def _json_loads_list(val: object) -> list:
+    import json as _json
+    if isinstance(val, list):
+        return val
+    if isinstance(val, str):
+        try:
+            return _json.loads(val)
+        except Exception:
+            return []
+    return []
 
 
 class ReplyService:
@@ -16,6 +31,7 @@ class ReplyService:
     def __init__(self) -> None:
         self._reply_repo = ReplyRepository()
         self._trace_repo = TraceRepository()
+        self._memory_repo = MemoryRepository()
 
     # ── Read ────────────────────────────────────────────────────────────────
 
@@ -53,7 +69,7 @@ class ReplyService:
         if updated is None:
             return {"success": False, "error": "Failed to update approval status."}
 
-        self._reply_repo.insert_approval_action(
+        approval_action = self._reply_repo.insert_approval_action(
             draft_id=draft_id,
             batch_id=draft["batch_id"],
             review_id=draft["review_id"],
@@ -73,7 +89,8 @@ class ReplyService:
             model_name="human",
         )
 
-        logger.success(f"Draft {draft_id} ({draft['review_id']}) approved.")
+        logger.success(f"草稿 {draft_id} ({draft['review_id']}) 审批通过")
+        self._write_memory(draft, approval_action, "approved_reply", draft["draft_text"])
         return {"success": True, "draft": updated, "error": None}
 
     def edit_draft(self, draft_id: int, edited_text: str) -> ApprovalResult:
@@ -94,7 +111,7 @@ class ReplyService:
         if updated is None:
             return {"success": False, "error": "Failed to update approval status."}
 
-        self._reply_repo.insert_approval_action(
+        approval_action = self._reply_repo.insert_approval_action(
             draft_id=draft_id,
             batch_id=draft["batch_id"],
             review_id=draft["review_id"],
@@ -114,7 +131,13 @@ class ReplyService:
             model_name="human",
         )
 
-        logger.success(f"Draft {draft_id} ({draft['review_id']}) edited.")
+        logger.success(f"草稿 {draft_id} ({draft['review_id']}) 已编辑")
+        self._write_memory(
+            draft, approval_action, "safety_case",
+            f"修改前：{draft['draft_text']}",
+            metadata_extra={"edit_reason": "人工修改优化"},
+        )
+        self._write_memory(draft, approval_action, "approved_reply", edited_text)
         return {"success": True, "draft": updated, "error": None}
 
     def reject_draft(self, draft_id: int, reason: str = "") -> ApprovalResult:
@@ -129,7 +152,7 @@ class ReplyService:
         if updated is None:
             return {"success": False, "error": "Failed to update approval status."}
 
-        self._reply_repo.insert_approval_action(
+        approval_action = self._reply_repo.insert_approval_action(
             draft_id=draft_id,
             batch_id=draft["batch_id"],
             review_id=draft["review_id"],
@@ -150,8 +173,52 @@ class ReplyService:
             model_name="human",
         )
 
-        logger.success(f"Draft {draft_id} ({draft['review_id']}) rejected.")
+        logger.success(f"草稿 {draft_id} ({draft['review_id']}) 已驳回")
+        mem_type = "safety_case" if draft.get("safety_status") == "blocked" else "rejected_reply"
+        self._write_memory(
+            draft, approval_action, mem_type,
+            f"驳回原因：{reason}\n原文：{draft['draft_text']}",
+            metadata_extra={"reject_reason": reason},
+        )
         return {"success": True, "draft": updated, "error": None}
+
+    # ── Memory ─────────────────────────────────────────────────────────────
+
+    def _write_memory(
+        self,
+        draft: dict[str, Any],
+        approval_action: dict[str, Any],
+        memory_type: str,
+        content: str,
+        *,
+        metadata_extra: dict[str, Any] | None = None,
+    ) -> None:
+        """Persist an approval action as an agent memory entry."""
+        try:
+            source = self._memory_repo.insert_source(
+                batch_id=draft.get("batch_id", ""),
+                review_id=draft.get("review_id", ""),
+                reply_id=str(draft.get("id", "")),
+                approval_action_id=approval_action.get("id"),
+            )
+            meta: dict[str, Any] = {
+                "risk_types": _json_loads_list(draft.get("risk_types", [])),
+                "topic": draft.get("primary_topic", ""),
+                "sentiment": draft.get("sentiment", ""),
+                "approval_action": approval_action.get("action", ""),
+            }
+            if metadata_extra:
+                meta.update(metadata_extra)
+            self._memory_repo.insert_memory(
+                store_type=_MEMO_STORE,
+                memory_type=memory_type,
+                content=content,
+                metadata=meta,
+                source_id=source.get("source_id", ""),
+            )
+        except Exception as exc:
+            logger.warning(f"写入记忆失败：{exc}")
+
 
     # ── Export ──────────────────────────────────────────────────────────────
 

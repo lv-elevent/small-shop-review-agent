@@ -14,28 +14,15 @@ from small_shop_agent.storage.repositories.trace_repository import TraceReposito
 from small_shop_agent.storage.repositories.review_repository import ReviewRepository
 from small_shop_agent.evals.eval_runner import run_full_eval
 from small_shop_agent.demo.demo_loader import DemoLoader
+from small_shop_agent.harness.verification.fallback_rules import classify_by_keywords
 from small_shop_agent.services.types import EvalResult
 
 
 def _rule_topic(review: dict) -> str:
     """Keyword-based topic classification fallback for eval ground truth."""
-    text = str(review.get("review_text", review.get("cleaned_text", ""))).lower()
-    if any(kw in text for kw in ["卫生", "脏", "虫", "异味", "异物", "头发"]):
-        return "hygiene"
-    if any(kw in text for kw in ["等", "排队", "太慢", "半小时", "20分钟", "太久"]):
-        return "waiting_time"
-    if any(kw in text for kw in ["服务", "态度", "员工", "服务员", "店员"]):
-        return "service"
-    if any(kw in text for kw in ["价格", "贵", "不值", "太贵"]):
-        return "price"
-    if any(kw in text for kw in ["环境", "装修", "座位", "吵", "安静"]):
-        return "environment"
-    if "咖啡" in text or "味道" in text or "口感" in text:
-        return "product"
+    text = str(review.get("review_text", review.get("cleaned_text", "")))
     rating = int(review.get("rating", 3))
-    if rating <= 2:
-        return "waiting_time"
-    return "other"
+    return classify_by_keywords(text, rating)
 
 
 def _rule_sentiment(review: dict) -> str:
@@ -113,7 +100,7 @@ class EvalService:
 
         # No matching cases at all — shouldn't happen with rule-based fallback
         if report["total_eval_cases"] == 0:
-            logger.warning(f"Eval {eval_run_id}: 0 eval cases after rule-based fallback.")
+            logger.warning(f"评测 {eval_run_id}：规则降级后评测案例为 0。")
             return {
                 "success": False,
                 "eval_run_id": eval_run_id,
@@ -152,9 +139,9 @@ class EvalService:
         )
 
         logger.success(
-            f"Eval {eval_run_id} complete: "
-            f"topic_acc={report['topic_accuracy']:.2%}, "
-            f"sent_acc={report['sentiment_accuracy']:.2%}"
+            f"评测完成 ID={eval_run_id}："
+            f"话题准确率={report['topic_accuracy']:.2%}, "
+            f"情绪准确率={report['sentiment_accuracy']:.2%}"
         )
 
         return {

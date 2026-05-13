@@ -16,14 +16,17 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from apps.streamlit_app.components.sidebar import render_sidebar
+from apps.streamlit_app.components.ui_helpers import safe_html, translate_trace_detail
 from small_shop_agent.services.trace_service import TraceService
 from small_shop_agent.services.eval_service import EvalService
 from small_shop_agent.services.insight_service import InsightService
 from small_shop_agent.services.reply_service import ReplyService
 from small_shop_agent.storage.database import execute_migrations, get_connection
+from small_shop_agent.utils.logger import ensure_logger_configured
 from small_shop_agent.exports.report_exporter import generate_report
 
 execute_migrations()
+ensure_logger_configured()
 
 # ── Page config ──────────────────────────────────────────────────────────
 st.set_page_config(
@@ -193,27 +196,6 @@ def _step_cn(name: str) -> str:
     return _STEP_NAME_CN.get(name, name)
 
 
-def _translate_detail(raw: str) -> str:
-    """Translate common English trace output_summary fragments to Chinese."""
-    import re
-    s = raw
-    s = re.sub(r"(\d+) valid reviews?", r"\1 条有效评论", s)
-    s = re.sub(r"(\d+) raw reviews?", r"\1 条原始评论", s)
-    s = re.sub(r"(\d+) pass, (\d+) rewrite_required, (\d+) blocked",
-               r"通过 \1 条，需重写 \2 条，拦截 \3 条", s)
-    s = re.sub(r"(\d+) evidence; (\d+) valid, (\d+) rejected/insufficient",
-               r"共 \1 条证据；\2 条有效，\3 条不足", s)
-    s = re.sub(r"(\d+) evidence records across (\d+) issues",
-               r"\1 条证据记录（\2 个问题）", s)
-    s = re.sub(r"(\d+) reviews", r"\1 条评论", s)
-    s = re.sub(r"(\d+) classified", r"\1 条已分类", s)
-    s = re.sub(r"(\d+) analyzed", r"\1 条已分析", s)
-    s = re.sub(r"(\d+) drafts", r"\1 条草稿", s)
-    s = re.sub(r"(\d+) insights", r"\1 个洞察", s)
-    s = re.sub(r"(\d+) evidence", r"\1 条证据", s)
-    s = re.sub(r"(\d+) negative candidates", r"\1 条差评", s)
-    s = re.sub(r"(\d+) drafts generated", r"\1 条草稿已生成", s)
-    return s
 
 
 def _status_dot_color(status: str) -> str:
@@ -334,9 +316,21 @@ def main() -> None:
         # Check for eval results
         eval_exists = latest_eval is not None
 
+        # Detect runtime from trace_id prefix
+        _first_trace_id = traces[0].get("trace_id", "") if traces else ""
+        _runtime = "agent_graph" if _first_trace_id.startswith("agent-") else "pipeline"
+        _runtime_badge = (
+            '<span style="background:#6C5CE7;color:#fff;padding:1px 6px;'
+            'border-radius:3px;font-size:0.7rem;margin-left:6px;">🤖 agent_graph</span>'
+            if _runtime == "agent_graph"
+            else '<span style="background:#2F6B4F;color:#fff;padding:1px 6px;'
+                 'border-radius:3px;font-size:0.7rem;margin-left:6px;">🏠 pipeline</span>'
+        )
+
         st.markdown(
             '<div class="section-card">'
-            '<p class="section-title-sm">📋 追踪日志</p>'
+            '<p class="section-title-sm">📋 追踪日志'
+            f'{_runtime_badge}</p>'
             '<p style="font-size:0.78rem;color:#A09080;margin:-8px 0 14px 0;">'
             f'工作流执行记录 · 共 {len(ordered_steps)} 个步骤</p>',
             unsafe_allow_html=True,
@@ -349,8 +343,8 @@ def main() -> None:
             sts = t["status"]
             dot_c = _status_dot_color(sts)
             time_str = _fmt_time(t.get("created_at", ""))
-            detail_parts = [_translate_detail(t.get("input_summary", "")),
-                          _translate_detail(t.get("output_summary", ""))]
+            detail_parts = [translate_trace_detail(t.get("input_summary", "")),
+                          translate_trace_detail(t.get("output_summary", ""))]
             latency = t.get("latency_ms", 0)
             if latency:
                 detail_parts.append(f"耗时 {latency}ms")
@@ -359,8 +353,8 @@ def main() -> None:
             st.markdown(f"""<div class="tr-row has-left-bar" style="border-left-color:{dot_c};">
 <span style="font-weight:700;font-size:0.82rem;color:#4A3728;min-width:24px;">#{step_num}</span>
 <span class="tr-status-dot" style="background:{dot_c};"></span>
-<span class="tr-step">{_step_cn(t['step_name'])}</span>
-<span class="tr-detail">{detail}</span>
+<span class="tr-step">{safe_html(_step_cn(t['step_name']))}</span>
+<span class="tr-detail">{safe_html(detail)}</span>
 <span>{_status_badge(sts)}</span>
 </div>""", unsafe_allow_html=True)
 
@@ -477,6 +471,53 @@ def main() -> None:
 
         st.markdown('</div>', unsafe_allow_html=True)
 
+        # ── Reliability Metrics ──
+        from small_shop_agent.observability.metrics import compute_metrics
+        rm = compute_metrics(batch_id)
+        st.markdown(
+            '<div class="section-card">'
+            '<p class="section-title-sm">📊 可靠性指标</p>',
+            unsafe_allow_html=True,
+        )
+        rc1, rc2, rc3, rc4 = st.columns(4, gap="small")
+        with rc1:
+            st.metric("总延迟", f"{rm.total_latency_ms}ms")
+        with rc2:
+            st.metric("LLM 延迟", f"{rm.llm_latency_ms}ms")
+        with rc3:
+            st.metric("Schema 重试", rm.schema_retry_count)
+        with rc4:
+            fc = "#C0392B" if rm.fallback_rate > 0.3 else "#E67E22" if rm.fallback_rate > 0 else "#27AE60"
+            st.markdown(
+                f'<div style="text-align:center;padding:8px 0;">'
+                f'<div style="font-size:1.25rem;font-weight:700;color:{fc};">{rm.fallback_rate:.0%}</div>'
+                f'<div style="font-size:0.7rem;color:#A09080;">降级率</div></div>',
+                unsafe_allow_html=True,
+            )
+
+        rc5, rc6, rc7, rc8 = st.columns(4, gap="small")
+        with rc5:
+            bc = "#C0392B" if rm.safety_block_rate > 0.2 else "#E67E22" if rm.safety_block_rate > 0 else "#27AE60"
+            st.markdown(
+                f'<div style="text-align:center;padding:8px 0;">'
+                f'<div style="font-size:1.25rem;font-weight:700;color:{bc};">{rm.safety_block_rate:.0%}</div>'
+                f'<div style="font-size:0.7rem;color:#A09080;">安全拦截率</div></div>',
+                unsafe_allow_html=True,
+            )
+        with rc6:
+            st.metric("人工编辑", rm.human_edit_count)
+        with rc7:
+            st.metric("记忆命中", rm.memory_hit_count)
+        with rc8:
+            uc = "#C0392B" if rm.unsafe_escape_count > 0 else "#27AE60"
+            st.markdown(
+                f'<div style="text-align:center;padding:8px 0;">'
+                f'<div style="font-size:1.25rem;font-weight:700;color:{uc};">{rm.unsafe_escape_count}</div>'
+                f'<div style="font-size:0.7rem;color:#A09080;">不安全漏报</div></div>',
+                unsafe_allow_html=True,
+            )
+        st.markdown('</div>', unsafe_allow_html=True)
+
         # ── Eval run history ──
         st.markdown(
             '<div class="section-card">'
@@ -504,10 +545,10 @@ def main() -> None:
 
                 st.markdown(f"""<div class="er-row">
 <span class="er-dot" style="background:#27AE60;"></span>
-<span style="font-size:0.74rem;color:#A09080;min-width:60px;">{time_str}</span>
-<span style="font-weight:600;font-size:0.80rem;color:#4A3728;min-width:80px;">{rid}</span>
+<span style="font-size:0.74rem;color:#A09080;min-width:60px;">{safe_html(time_str)}</span>
+<span style="font-weight:600;font-size:0.80rem;color:#4A3728;min-width:80px;">{safe_html(rid)}</span>
 <span style="font-weight:700;font-size:0.84rem;color:{sc_c};min-width:42px;">{score:.0%}</span>
-<span style="font-size:0.76rem;color:#6B5B4F;">{summary}</span>
+<span style="font-size:0.76rem;color:#6B5B4F;">{safe_html(summary)}</span>
 </div>""", unsafe_allow_html=True)
         else:
             st.markdown(
@@ -522,7 +563,7 @@ def main() -> None:
         st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
         bc1, bc2, bc3 = st.columns([2, 2, 2])
         with bc1:
-            if st.button("🧪 运行评测", key="run_eval_btn", use_container_width=True, type="primary"):
+            if st.button("🧪 运行评测", key="run_eval_btn", width='stretch', type="primary"):
                 with st.spinner("正在运行评测…"):
                     result = eval_svc.run_eval({"batch_id": batch_id})
                 if result["success"]:
@@ -571,15 +612,15 @@ def main() -> None:
                     st.download_button(
                         "📥 导出报告", data=report_text,
                         file_name=f"trace_eval_report_{batch_id}.md",
-                        mime="text/markdown", use_container_width=True, type="secondary",
+                        mime="text/markdown", width='stretch', type="secondary",
                         key="export_eval_btn",
                     )
                 except Exception:
-                    st.button("📥 导出报告", key="export_eval", use_container_width=True,
+                    st.button("📥 导出报告", key="export_eval", width='stretch',
                               type="secondary", disabled=True,
                               help="导出报告生成失败")
             else:
-                st.button("📥 导出报告", key="export_eval", use_container_width=True,
+                st.button("📥 导出报告", key="export_eval", width='stretch',
                           type="secondary", disabled=True,
                           help="请先运行分析后再导出")
         with bc3:
@@ -589,12 +630,12 @@ def main() -> None:
                 sts = t["status"]
                 trace_text_lines.append(
                     f"[{_status_text.get(sts, sts)}] {_step_cn(t['step_name'])} | "
-                    f"输入: {_translate_detail(t.get('input_summary', '-'))} | "
-                    f"输出: {_translate_detail(t.get('output_summary', '-'))} | "
+                    f"输入: {translate_trace_detail(t.get('input_summary', '-'))} | "
+                    f"输出: {translate_trace_detail(t.get('output_summary', '-'))} | "
                     f"耗时: {t.get('latency_ms', 0)}ms"
                 )
             trace_text = "\n".join(trace_text_lines)
-            with st.popover("📋 复制 Trace", use_container_width=True):
+            with st.popover("📋 复制 Trace", width='stretch'):
                 if trace_text:
                     st.code(trace_text, language=None)
                     st.caption("👆 选中上方文本即可复制")

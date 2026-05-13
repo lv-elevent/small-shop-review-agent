@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from small_shop_agent.llm.base import BaseLLMProvider
 
-_SUPPORTED_MODES = ("demo", "mock", "live", "openai")
+_SUPPORTED_MODES = ("demo", "mock", "live", "openai", "ollama")
 
 
 @dataclass
@@ -56,12 +56,10 @@ def get_llm_provider(mode: str | None = None) -> BaseLLMProvider:
         from small_shop_agent.llm.mock_provider import MockProvider
         return MockProvider(DemoLoader())
 
-    # ── Ollama (not implemented) ──
+    # ── Ollama ──
     if resolved == "ollama":
-        raise NotImplementedError(
-            "Ollama provider is not implemented in v0.6. "
-            "Use mode='demo' or mode='live' instead."
-        )
+        from small_shop_agent.llm.ollama_provider import OllamaProvider
+        return OllamaProvider()
 
     # ── Live / OpenAI ──
     if resolved in ("live", "openai"):

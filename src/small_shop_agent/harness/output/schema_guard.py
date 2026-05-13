@@ -6,6 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
+from small_shop_agent.utils.logger import log_step
+
 
 @dataclass
 class SchemaGuardResult:
@@ -30,6 +32,7 @@ def validate_output(
     model: type[BaseModel],
     *,
     many: bool = True,
+    batch_id: str = "",
 ) -> SchemaGuardResult:
     """Validate LLM output against a Pydantic model.
 
@@ -37,12 +40,15 @@ def validate_output(
         data: List of dicts (many=True) or a single dict (many=False).
         model: Pydantic BaseModel subclass to validate against.
         many: If True, data is a list; each item validated individually.
+        batch_id: Optional batch ID for structured logging.
 
     Returns:
         SchemaGuardResult — check .ok; valid items in .validated even on partial failure.
     """
     items: list[dict[str, Any]] = data if many else [data]
     result = SchemaGuardResult(total_input=len(items))
+
+    log_step("schema_guard_start", batch_id or "unknown", item_count=len(items))
 
     for i, item in enumerate(items):
         try:
@@ -58,4 +64,6 @@ def validate_output(
             })
 
     result.ok = result.total_invalid == 0 and result.total_valid > 0
+    log_step("schema_guard_done", batch_id or "unknown",
+            total_valid=result.total_valid, total_invalid=result.total_invalid, ok=result.ok)
     return result

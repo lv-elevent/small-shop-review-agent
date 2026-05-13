@@ -7,6 +7,9 @@ import re
 from typing import Any
 
 from small_shop_agent.llm.base import BaseLLMProvider
+from small_shop_agent.core.config import LLM_TEMPERATURE, LLM_TIMEOUT_SECONDS
+from small_shop_agent.prompts.prompt_registry import get_prompt
+from small_shop_agent.utils.logger import log_step
 
 _MD_FENCE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?```", re.DOTALL)
 
@@ -19,7 +22,7 @@ class OpenAIProvider(BaseLLMProvider):
         api_key: str | None = None,
         base_url: str | None = None,
         model: str | None = None,
-        timeout_seconds: int = 30,
+        timeout_seconds: int = LLM_TIMEOUT_SECONDS,
     ) -> None:
         self._api_key = api_key or os.environ.get("OPENAI_API_KEY", "").strip()
         self._base_url = base_url or os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
@@ -33,12 +36,27 @@ class OpenAIProvider(BaseLLMProvider):
             except ValueError:
                 pass
 
+        # Lazy client cache (M4)
+        self._client: object | None = None
+        self._client_kwargs: dict[str, Any] = {
+            "api_key": self._api_key,
+            "base_url": self._base_url,
+            "timeout": float(self._timeout),
+        }
+
+    @property
+    def _openai_client(self) -> Any:
+        if self._client is None:
+            from openai import OpenAI  # type: ignore[import]
+            self._client = OpenAI(**self._client_kwargs)
+        return self._client
+
     # ── BaseLLMProvider implementation ──────────────────────────────────
 
     def classify_reviews(self, reviews: list[dict[str, Any]]) -> list[dict[str, Any]]:
         prompt = self._build_classification_prompt(reviews)
         return self._call_json_model(
-            system_prompt=_CLASSIFY_SYSTEM,
+            system_prompt=get_prompt("classify_reviews"),
             user_prompt=prompt,
             step_name="classification",
         )
@@ -46,7 +64,7 @@ class OpenAIProvider(BaseLLMProvider):
     def analyze_sentiment(self, reviews: list[dict[str, Any]]) -> list[dict[str, Any]]:
         prompt = self._build_sentiment_prompt(reviews)
         return self._call_json_model(
-            system_prompt=_SENTIMENT_SYSTEM,
+            system_prompt=get_prompt("analyze_sentiment"),
             user_prompt=prompt,
             step_name="sentiment_analysis",
         )
@@ -56,7 +74,7 @@ class OpenAIProvider(BaseLLMProvider):
     ) -> list[dict[str, Any]]:
         prompt = self._build_insights_prompt(reviews, analysis)
         return self._call_json_model(
-            system_prompt=_INSIGHTS_SYSTEM,
+            system_prompt=get_prompt("generate_insights"),
             user_prompt=prompt,
             step_name="insight_generation",
         )
@@ -66,7 +84,7 @@ class OpenAIProvider(BaseLLMProvider):
     ) -> list[dict[str, Any]]:
         prompt = self._build_replies_prompt(reviews, analysis)
         return self._call_json_model(
-            system_prompt=_REPLIES_SYSTEM,
+            system_prompt=get_prompt("draft_replies"),
             user_prompt=prompt,
             step_name="reply_drafting",
         )
@@ -74,7 +92,7 @@ class OpenAIProvider(BaseLLMProvider):
     def check_safety(self, drafts: list[dict[str, Any]]) -> list[dict[str, Any]]:
         prompt = self._build_safety_prompt(drafts)
         return self._call_json_model(
-            system_prompt=_SAFETY_SYSTEM,
+            system_prompt=get_prompt("check_safety"),
             user_prompt=prompt,
             step_name="safety_check",
         )
@@ -112,6 +130,8 @@ class OpenAIProvider(BaseLLMProvider):
 
     # ── Internal API call ───────────────────────────────────────────────
 
+    _REVIEW_ID_RE = re.compile(r"review_id=(\w+)")
+
     def _call_json_model(
         self, *, system_prompt: str, user_prompt: str, step_name: str
     ) -> Any:
@@ -122,35 +142,57 @@ class OpenAIProvider(BaseLLMProvider):
                 "Set it via environment variable or pass api_key= to OpenAIProvider()."
             )
 
-        # Lazy import — only when actually called
-        from openai import OpenAI  # type: ignore[import]
+        batch_id: str = getattr(self, "_batch_id", "")
+        review_ids: list[str] = self._REVIEW_ID_RE.findall(user_prompt)
 
-        client = OpenAI(
-            api_key=self._api_key,
-            base_url=self._base_url,
-            timeout=float(self._timeout),
+        log_step(
+            f"{step_name}_llm_call_start", batch_id or "unknown",
+            model=self._model, step=step_name,
+            review_count=len(review_ids),
+            prompt_len=len(user_prompt),
         )
-        response = client.chat.completions.create(
-            model=self._model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.3,
-        )
-        content = response.choices[0].message.content or ""
-        return self._extract_json(content)
+
+        try:
+            client = self._openai_client
+            response = client.chat.completions.create(
+                model=self._model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=LLM_TEMPERATURE,
+            )
+            content = response.choices[0].message.content or ""
+            result = self._extract_json(content)
+
+            log_step(
+                f"{step_name}_llm_call_done", batch_id or "unknown",
+                model=self._model, step=step_name,
+                response_ok=True,
+                output_len=len(content),
+            )
+            return result
+
+        except Exception as exc:
+            log_step(
+                f"{step_name}_llm_call_error", batch_id or "unknown",
+                model=self._model, step=step_name,
+                response_ok=False,
+                error=str(exc),
+            )
+            raise
 
     # ── Prompt builders ─────────────────────────────────────────────────
 
     def _build_classification_prompt(self, reviews: list[dict[str, Any]]) -> str:
         lines = [
-            "Classify each of the following customer reviews. Return ONLY a JSON array.",
-            "Each object must have: review_id (str), topics (list[str]), primary_topic (str),",
-            "topic_confidence (float 0-1), needs_review (bool).",
-            "Valid topics: hygiene, waiting_time, service, product, environment, price, other.",
+            "请用中文对以下顾客评论进行分类。只返回 JSON 数组。",
+            "每个对象包含：review_id (str), topics (list[str]), primary_topic (str),",
+            "topic_confidence (float 0-1), needs_review (bool)。",
+            "有效话题：卫生(hygiene), 等待时间(waiting_time), 服务(service), 产品(product), 环境(environment), 价格(price), 其他(other)。",
+            "primary_topic 请使用英文键名（如 hygiene, waiting_time 等）。",
             "",
-            "Reviews:",
+            "评论列表：",
         ]
         for r in reviews:
             lines.append(
@@ -164,12 +206,12 @@ class OpenAIProvider(BaseLLMProvider):
 
     def _build_sentiment_prompt(self, reviews: list[dict[str, Any]]) -> str:
         lines = [
-            "Analyze sentiment for each review. Return ONLY a JSON array.",
-            "Each object: review_id (str), sentiment (positive|neutral|negative),",
+            "请用中文分析以下评论的情绪。只返回 JSON 数组。",
+            "每个对象：review_id (str), sentiment (positive|neutral|negative),",
             "severity (int 1-5), sentiment_confidence (float 0-1),",
-            "is_negative_candidate (bool), analysis_reason (str, brief).",
+            "is_negative_candidate (bool), analysis_reason (str, 用中文简述)。",
             "",
-            "Reviews:",
+            "评论列表：",
         ]
         for r in reviews:
             lines.append(
@@ -186,15 +228,15 @@ class OpenAIProvider(BaseLLMProvider):
     ) -> str:
         neg = [a for a in analyses if a.get("is_negative_candidate")]
         lines = [
-            "Aggregate the top 3 issues from negative reviews. Return ONLY a JSON array (length 3).",
-            "Each object: rank (int 1-3), issue_name (str), issue_summary (str),",
-            "topic (str), mention_count (int), severity_level (high|medium|low),",
-            "priority_score (float 0-1), suggested_action (str),",
+            "请用中文从差评中聚合 Top 3 问题。只返回 JSON 数组（长度 3）。",
+            "每个对象：rank (int 1-3), issue_name (str 中文标题), issue_summary (str 中文总结),",
+            "topic (str 英文键名), mention_count (int), severity_level (high|medium|low),",
+            "priority_score (float 0-1), suggested_action (str 中文建议),",
             "evidence_count (int), evidence_status (sufficient|insufficient),",
-            'evidence (list of {review_id: str, evidence_text: str, evidence_reason: str}).',
-            "Each piece of evidence MUST reference a real review_id from the data below.",
+            'evidence (list of {review_id: str, evidence_text: str, evidence_reason: str 中文}).',
+            "每条证据必须引用下面数据中真实存在的 review_id。",
             "",
-            f"Negative reviews ({len(neg)}):",
+            f"差评列表 ({len(neg)} 条)：",
         ]
         for a in neg:
             rid = a.get("review_id", "")
@@ -213,12 +255,12 @@ class OpenAIProvider(BaseLLMProvider):
     ) -> str:
         neg = [a for a in analyses if a.get("is_negative_candidate")]
         lines = [
-            "Draft replies for negative reviews. Return ONLY a JSON array.",
-            "Each object: review_id (str), original_review (str),",
-            "draft_text (str), approval_status (str = 'pending').",
-            "Guidelines: sincere, restrained, no blame-shifting, no false promises, no fabricated facts.",
+            "请用中文为差评撰写回复草稿。只返回 JSON 数组。",
+            "每个对象：review_id (str), original_review (str),",
+            "draft_text (str 中文回复), approval_status (str = 'pending')。",
+            "原则：真诚、克制、不甩锅、不攻击顾客、不编造事实、不承诺无法保证的赔偿、不默认已处罚员工。",
             "",
-            f"Negative reviews ({len(neg)}):",
+            f"差评列表 ({len(neg)} 条)：",
         ]
         for a in neg:
             rid = a.get("review_id", "")
@@ -234,14 +276,13 @@ class OpenAIProvider(BaseLLMProvider):
 
     def _build_safety_prompt(self, drafts: list[dict[str, Any]]) -> str:
         lines = [
-            "Check each reply draft for safety. Return ONLY a JSON array.",
-            "Each object: review_id (str), safety_status (pass|rewrite_required|blocked),",
-            "risk_types (list[str]), safety_reason (str).",
-            "Rules: block if attacking customer, disclosing privacy, claiming employee punishment,",
-            "or fabricating facts. Require rewrite for unfounded compensation, over-marketing,",
-            "or defensive/blame-shifting language.",
+            "请用中文检查以下回复草稿的安全性。只返回 JSON 数组。",
+            "每个对象：review_id (str), safety_status (pass|rewrite_required|blocked),",
+            "risk_types (list[str]), safety_reason (str 中文)。",
+            "规则：攻击顾客、泄露隐私、声称已处罚员工、编造事实 → blocked；",
+            "无依据赔偿承诺、过度营销、推卸责任式语言 → rewrite_required。",
             "",
-            "Drafts:",
+            "草稿列表：",
         ]
         for d in drafts:
             lines.append(
@@ -252,39 +293,4 @@ class OpenAIProvider(BaseLLMProvider):
         lines.append("JSON only — no markdown, no explanation:")
         return "\n".join(lines)
 
-
-# ── System prompts ─────────────────────────────────────────────────────
-
-_CLASSIFY_SYSTEM = (
-    "You are a review classification engine. "
-    "Classify customer reviews into topics. "
-    "Return ONLY a JSON array — no markdown, no explanation, no code fences."
-)
-
-_SENTIMENT_SYSTEM = (
-    "You are a sentiment analysis engine. "
-    "Analyze review sentiment, severity, and flag negative candidates. "
-    "Return ONLY a JSON array — no markdown, no explanation, no code fences."
-)
-
-_INSIGHTS_SYSTEM = (
-    "You are an issue aggregation engine. "
-    "Identify the top 3 problems from negative reviews with evidence binding. "
-    "Every evidence item MUST cite a real review_id from the input. "
-    "Return ONLY a JSON array of 3 objects — no markdown, no explanation, no code fences."
-)
-
-_REPLIES_SYSTEM = (
-    "You are a customer reply drafting engine. "
-    "Write sincere, restrained replies for negative reviews. "
-    "No blame-shifting, no false promises, no fabricated facts, no claiming employee punishment. "
-    "Return ONLY a JSON array — no markdown, no explanation, no code fences."
-)
-
-_SAFETY_SYSTEM = (
-    "You are a reply safety checker. "
-    "Flag replies that contain attacks, privacy leaks, fabricated facts, "
-    "unfounded compensation, over-marketing, or defensive language. "
-    "Return ONLY a JSON array — no markdown, no explanation, no code fences."
-)
 

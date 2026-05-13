@@ -96,6 +96,7 @@ class ReviewService:
             return schema_err
 
         # Row-level validation and cleaning
+        stats: dict[str, int] = {}
         cleaned_df, stats = validate_and_clean(df)
 
         # Generate batch_id

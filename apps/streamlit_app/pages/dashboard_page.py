@@ -19,13 +19,17 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from apps.streamlit_app.components.metric_card import metric_card
 from apps.streamlit_app.components.sidebar import render_sidebar
+from apps.streamlit_app.components.ui_helpers import safe_html, translate_trace_detail
+from small_shop_agent.domain.business_rules import TOPIC_CN_MAP
 from small_shop_agent.services.insight_service import InsightService
 from small_shop_agent.services.reply_service import ReplyService
 from small_shop_agent.services.trace_service import TraceService
 from small_shop_agent.services.eval_service import EvalService
 from small_shop_agent.storage.database import execute_migrations, get_connection
+from small_shop_agent.utils.logger import ensure_logger_configured
 
 execute_migrations()
+ensure_logger_configured()
 
 # ── Page config ──────────────────────────────────────────────────────────
 st.set_page_config(
@@ -200,16 +204,10 @@ _EVIDENCE_STATUS_CN: dict[str, str] = {
     "weak": "证据较弱",
 }
 
-_TOPIC_CN: dict[str, str] = {
-    "hygiene": "卫生", "waiting_time": "等待时间", "service": "服务",
-    "product": "产品", "environment": "环境", "price": "价格", "other": "其他",
-}
-
-
 def _cn_topic(raw: str) -> str:
     """Convert a raw issue_name to Chinese if it contains English topic keys."""
     result = raw
-    for en, cn in _TOPIC_CN.items():
+    for en, cn in TOPIC_CN_MAP.items():
         result = result.replace(en, cn)
     return result
 
@@ -302,11 +300,11 @@ def _render_pagination(total_items: int, page_size: int = 5) -> int:
             unsafe_allow_html=True,
         )
     with c2:
-        if st.button("◀", key="page_prev", disabled=(current == 0), use_container_width=True):
+        if st.button("◀", key="page_prev", disabled=(current == 0), width='stretch'):
             st.session_state[page_key] = max(0, current - 1)
             st.rerun()
     with c3:
-        if st.button("▶", key="page_next", disabled=(current >= total_pages - 1), use_container_width=True):
+        if st.button("▶", key="page_next", disabled=(current >= total_pages - 1), width='stretch'):
             st.session_state[page_key] = min(total_pages - 1, current + 1)
             st.rerun()
     return current
@@ -324,7 +322,7 @@ def _render_issue_card(issue: dict) -> None:
     sev_label = {"high": "高", "medium": "中", "low": "低"}.get(sev, sev)
 
     evidence_ids = issue.get("evidence_review_ids", [])
-    evidence_html = " ".join(f"<code>{eid}</code>" for eid in evidence_ids) if evidence_ids else "暂无关联评论"
+    evidence_html = " ".join(f"<code>{safe_html(eid)}</code>" for eid in evidence_ids) if evidence_ids else "暂无关联评论"
 
     html = f"""<div class="issue-card">
 <div class="severity-stripe" style="background:{stripe_color};"></div>
@@ -332,13 +330,13 @@ def _render_issue_card(issue: dict) -> None:
 <span class="issue-num">问题 #{issue['rank']}</span>
 <span class="sev-dot" style="color:{sev_color};">● {sev_label}严重</span>
 </div>
-<div class="issue-title">{_cn_topic(issue['issue_name'])}</div>
+<div class="issue-title">{safe_html(_cn_topic(issue['issue_name']))}</div>
 <div class="issue-stats">
 <span>提及 <b>{issue['mention_count']}</b> 次</span>
 <span>证据 <b>{issue['evidence_count']}</b> 条 · {_EVIDENCE_STATUS_CN.get(issue.get('evidence_status', ''), issue.get('evidence_status', '—'))}</span>
 </div>
 <div class="evidence-list">关联评论：{evidence_html}</div>
-<span class="btn-suggestion">💡 {issue.get('suggested_action', '暂无建议')}</span>
+<span class="btn-suggestion">💡 {safe_html(issue.get('suggested_action', '暂无建议'))}</span>
 </div>"""
     st.markdown(html, unsafe_allow_html=True)
 
@@ -346,28 +344,6 @@ def _render_issue_card(issue: dict) -> None:
 # ═══════════════════════════════════════════════════════════════════════════
 # Component: Harness Status (derived from traces)
 # ═══════════════════════════════════════════════════════════════════════════
-
-def _translate_detail(raw: str) -> str:
-    """Translate common English trace output_summary fragments to Chinese."""
-    import re
-    s = raw
-    s = re.sub(r"(\d+) valid reviews?", r"\1 条有效评论", s)
-    s = re.sub(r"(\d+) raw reviews?", r"\1 条原始评论", s)
-    s = s.replace("verified; no duplicates detected", "已校验；未发现重复")
-    s = re.sub(r"(\d+) pass, (\d+) rewrite_required, (\d+) blocked",
-               r"通过 \1 条，需重写 \2 条，拦截 \3 条", s)
-    s = re.sub(r"(\d+) evidence; (\d+) valid, (\d+) rejected/insufficient",
-               r"共 \1 条证据；\2 条有效，\3 条不足", s)
-    s = re.sub(r"(\d+) evidence records across (\d+) issues",
-               r"\1 条证据记录（\2 个问题）", s)
-    s = re.sub(r"(\d+) reviews", r"\1 条评论", s)
-    s = re.sub(r"(\d+) classified", r"\1 条已分类", s)
-    s = re.sub(r"(\d+) analyzed", r"\1 条已分析", s)
-    s = re.sub(r"(\d+) drafts", r"\1 条草稿", s)
-    s = re.sub(r"(\d+) insights", r"\1 个洞察", s)
-    s = re.sub(r"(\d+) evidence", r"\1 条证据", s)
-    s = re.sub(r"(\d+) negative candidates", r"\1 条差评", s)
-    return s
 
 
 def _render_harness_status(traces: list[dict], pending_count: int) -> None:
@@ -377,7 +353,7 @@ def _render_harness_status(traces: list[dict], pending_count: int) -> None:
         {
             "name": "输入校验",
             "status": trace_map.get("input_validation", {}).get("status", "pending"),
-            "detail": _translate_detail(trace_map.get("input_validation", {}).get("output_summary", "—")),
+            "detail": translate_trace_detail(trace_map.get("input_validation", {}).get("output_summary", "—")),
         },
         {
             "name": "Schema 约束",
@@ -389,12 +365,12 @@ def _render_harness_status(traces: list[dict], pending_count: int) -> None:
         {
             "name": "证据绑定",
             "status": trace_map.get("evidence_check", {}).get("status", "pending"),
-            "detail": _translate_detail(trace_map.get("evidence_check", {}).get("output_summary", "—")),
+            "detail": translate_trace_detail(trace_map.get("evidence_check", {}).get("output_summary", "—")),
         },
         {
             "name": "安全检查",
             "status": trace_map.get("safety_check", {}).get("status", "pending"),
-            "detail": _translate_detail(trace_map.get("safety_check", {}).get("output_summary", "—")),
+            "detail": translate_trace_detail(trace_map.get("safety_check", {}).get("output_summary", "—")),
         },
         {
             "name": "人工审批",
@@ -477,7 +453,7 @@ def _render_reply_queue(drafts: list[dict], page: int, page_size: int = 4) -> No
 <span style="font-weight:600;font-size:0.76rem;color:{dot_c};">● {dot_label}</span>
 </div>""", unsafe_allow_html=True)
             with r2:
-                if st.button("审核", key=f"q_review_{item['review_id']}", type="secondary", use_container_width=True):
+                if st.button("审核", key=f"q_review_{item['review_id']}", type="secondary", width='stretch'):
                     st.switch_page("pages/reply_review_page.py")
 
 
@@ -519,19 +495,19 @@ def main() -> None:
                         st.download_button(
                             label="📥 导出", data=export_data["csv_data"],
                             file_name=f"approved_replies_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                            mime="text/csv", use_container_width=True, key="export_approved",
+                            mime="text/csv", width='stretch', key="export_approved",
                         )
                     else:
-                        st.button("📥 导出", use_container_width=True, disabled=True, key="export_disabled_dash")
+                        st.button("📥 导出", width='stretch', disabled=True, key="export_disabled_dash")
                 except Exception:
-                    st.button("📥 导出", use_container_width=True, disabled=True, key="export_error_dash")
+                    st.button("📥 导出", width='stretch', disabled=True, key="export_error_dash")
             else:
-                st.button("📥 导出", use_container_width=True, disabled=True, key="export_no_batch")
+                st.button("📥 导出", width='stretch', disabled=True, key="export_no_batch")
         with bc2:
-            if st.button("🧪 评测", key="run_eval_dash", use_container_width=True):
+            if st.button("🧪 评测", key="run_eval_dash", width='stretch'):
                 st.switch_page("pages/trace_eval_page.py")
         with bc3:
-            if st.button("🔍 追踪", key="view_trace_dash", use_container_width=True):
+            if st.button("🔍 追踪", key="view_trace_dash", width='stretch'):
                 st.switch_page("pages/trace_eval_page.py")
 
     st.markdown("<hr class='custom-hr'>", unsafe_allow_html=True)

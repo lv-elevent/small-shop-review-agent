@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 REQUIRED_COLUMNS = [
-    "review_id",
-    "date",
-    "platform",
-    "rating",
     "review_text",
+    "rating",
+    "date",
+]
+
+OPTIONAL_COLUMNS = [
+    "review_id",
+    "platform",
 ]
 
 RATING_MIN = 1

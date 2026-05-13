@@ -3,18 +3,12 @@ from __future__ import annotations
 
 from typing import Any
 
-_STEP_NAME_CN: dict[str, str] = {
-    "input_validation": "输入校验",
-    "data_cleaning": "数据清洗",
-    "classification": "评论分类",
-    "sentiment_analysis": "情绪分析",
-    "issue_aggregation": "问题聚合",
-    "evidence_check": "证据绑定",
-    "reply_drafting": "回复草稿",
-    "safety_check": "安全检查",
-    "human_approval": "人工审批",
-    "eval_run": "评测运行",
-}
+from small_shop_agent.domain.business_rules import (
+    TOPIC_CN_MAP,
+    SEVERITY_LABEL_MAP,
+    STEP_NAME_CN_MAP,
+)
+
 
 _STATUS_CN: dict[str, str] = {
     "passed": "通过",
@@ -23,18 +17,9 @@ _STATUS_CN: dict[str, str] = {
     "pending": "进行中",
 }
 
-_SEVERITY_CN: dict[str, str] = {
-    "high": "高", "medium": "中", "low": "低",
-}
-
-_TOPIC_CN: dict[str, str] = {
-    "hygiene": "卫生", "waiting_time": "等待时间", "service": "服务",
-    "product": "产品", "environment": "环境", "price": "价格", "other": "其他",
-}
-
 
 def _cn_topic(raw: str) -> str:
-    for en, cn in _TOPIC_CN.items():
+    for en, cn in TOPIC_CN_MAP.items():
         raw = raw.replace(en, cn)
     return raw
 
@@ -100,7 +85,7 @@ def generate_report(
             name = _cn_topic(str(issue.get("issue_name", "—")))
             topic = issue.get("topic", "—")
             sev = issue.get("severity_level", "medium")
-            sev_label = _SEVERITY_CN.get(sev, sev)
+            sev_label = SEVERITY_LABEL_MAP.get(sev, sev)
             mention = issue.get("mention_count", 0)
             ev_count = issue.get("evidence_count", 0)
             ev_status = issue.get("evidence_status", "—")
@@ -167,7 +152,7 @@ def generate_report(
             step_num += 1
             sts = t.get("status", "—")
             sts_cn = _STATUS_CN.get(sts, sts)
-            name_cn = _STEP_NAME_CN.get(step_name, step_name)
+            name_cn = STEP_NAME_CN_MAP.get(step_name, step_name)
             inp = t.get("input_summary", "—")
             out = t.get("output_summary", "—")
             latency = t.get("latency_ms", 0)

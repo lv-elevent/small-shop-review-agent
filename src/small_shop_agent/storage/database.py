@@ -24,21 +24,27 @@ def get_connection() -> sqlite3.Connection:
 def execute_script(script_path: Path) -> None:
     """Execute a single SQL file."""
     if not script_path.exists():
-        logger.error(f"SQL file not found: {script_path}")
+        logger.error(f"SQL 文件未找到：{script_path}")
         return
     with get_connection() as conn:
         script = script_path.read_text(encoding="utf-8")
         conn.executescript(script)
-        logger.info(f"Executed: {script_path.name}")
+        logger.debug(f"Executed: {script_path.name}")
 
 
 def execute_migrations(migrations_dir: Path | None = None) -> None:
-    """Run all .sql migration files in sorted order. Idempotent via IF NOT EXISTS."""
+    """Run all .sql migration files in sorted order. Idempotent via IF NOT EXISTS.
+
+    Also ensures file logging is configured (idempotent global init).
+    """
+    from small_shop_agent.utils.logger import ensure_logger_configured
+    ensure_logger_configured()
+
     folder = migrations_dir or MIGRATIONS_DIR
     if not folder.exists():
-        logger.error(f"Migrations folder not found: {folder}")
+        logger.error(f"迁移文件夹未找到：{folder}")
         return
     sql_files = sorted(folder.glob("*.sql"))
     for f in sql_files:
         execute_script(f)
-    logger.success(f"Applied {len(sql_files)} migrations.")
+    logger.debug(f"Applied {len(sql_files)} migrations.")

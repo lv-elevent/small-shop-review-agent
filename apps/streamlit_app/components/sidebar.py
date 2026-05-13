@@ -75,7 +75,7 @@ def render_sidebar() -> str:
             st.session_state.nav_selection = "上传评论"
 
         nav_items = [
-            ("📤  上传", "上传评论"),
+            ("📤  上传评论", "上传评论"),
             ("📊  数据看板", "数据看板"),
             ("💌  回复审核", "回复审核"),
             ("🔍  追踪评测", "追踪与评测"),
@@ -87,7 +87,7 @@ def render_sidebar() -> str:
             clicked = st.button(
                 label,
                 key=f"nav_{key}",
-                use_container_width=True,
+                width='stretch',
                 type="primary" if active else "secondary",
             )
             if clicked:

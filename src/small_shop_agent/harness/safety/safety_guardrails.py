@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from small_shop_agent.utils.logger import log_step
+
 # ── Two-tier keyword patterns ──────────────────────────────────────────
 
 BLOCKED_PATTERNS: dict[str, list[str]] = {
@@ -133,18 +135,23 @@ def check_reply_safety(
     )
 
 
-def check_many_replies(drafts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def check_many_replies(
+    drafts: list[dict[str, Any]],
+    batch_id: str = "",
+) -> list[dict[str, Any]]:
     """Batch safety check. Preserves all original fields, appends safety fields.
 
     Args:
         drafts: List of dicts, each with at least 'draft_text' (and optionally
                 'review_id', 'original_review', etc.).
+        batch_id: Optional batch ID for structured logging.
 
     Returns:
         Same list with safety_status, risk_types, safety_reason added per draft.
         approval_status is set to "blocked" when blocked.
     """
     results: list[dict[str, Any]] = []
+    bid = batch_id or "unknown"
     for d in drafts:
         entry = dict(d)
         review_ctx = {k: d.get(k) for k in ("review_id", "review_text", "rating", "sentiment") if k in d}
@@ -154,6 +161,8 @@ def check_many_replies(drafts: list[dict[str, Any]]) -> list[dict[str, Any]]:
         entry["safety_reason"] = "; ".join(check.reasons)
         if check.status == "blocked":
             entry["approval_status"] = "blocked"
+        log_step("safety_guardrail", bid, review_id=d.get("review_id", ""),
+                safety_status=check.status, risk_flags=check.risk_flags)
         results.append(entry)
     return results
 

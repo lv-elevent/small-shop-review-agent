@@ -5,7 +5,6 @@ import time
 from typing import Any
 
 from loguru import logger
-from pydantic import BaseModel, Field
 
 from small_shop_agent.storage.repositories.batch_repository import BatchRepository
 from small_shop_agent.storage.repositories.review_repository import ReviewRepository
@@ -16,64 +15,24 @@ from small_shop_agent.storage.repositories.trace_repository import TraceReposito
 from small_shop_agent.demo.demo_loader import DemoLoader
 from small_shop_agent.llm.mock_provider import MockProvider
 from small_shop_agent.llm.base import BaseLLMProvider
-from small_shop_agent.harness.output.schema_guard import validate_output
-from small_shop_agent.harness.output.structured_retry import run_with_schema_retry
-from small_shop_agent.harness.evidence.evidence_guard import validate_insight_evidence
-from small_shop_agent.harness.safety.safety_guardrails import check_many_replies
 from small_shop_agent.utils.logger import log_step
+from small_shop_agent.domain.business_rules import TOPIC_CN_MAP
+from small_shop_agent.harness.verification.fallback_rules import classify_by_keywords
+from small_shop_agent.services.pipeline_steps import (
+    run_batch_validation,
+    run_classification,
+    run_sentiment,
+    run_consistency_check,
+    merge_classification_sentiment,
+    write_analysis_to_db,
+    run_insights,
+    run_evidence_check,
+    run_reply_drafting,
+    run_safety_check,
+    write_drafts_to_db,
+    finalize_batch,
+)
 from small_shop_agent.services.types import WorkflowResult, WorkflowStatusResult
-
-
-# ── Private Pydantic models for schema validation (do NOT modify schemas/) ──
-
-class _ClassificationItem(BaseModel):
-    review_id: str
-    topics: list[str]
-    primary_topic: str
-    topic_confidence: float
-    needs_review: bool = False
-
-
-class _SentimentItem(BaseModel):
-    review_id: str
-    sentiment: str
-    severity: int = Field(ge=1, le=5)
-    sentiment_confidence: float
-    is_negative_candidate: bool = False
-    analysis_reason: str = ""
-
-
-class _InsightItem(BaseModel):
-    rank: int
-    issue_name: str
-    topic: str
-    issue_summary: str = ""
-    mention_count: int = 0
-    severity_level: str = "medium"
-    priority_score: float = 0.0
-    suggested_action: str = ""
-    evidence_count: int = 0
-    evidence_status: str = "sufficient"
-    evidence: list[dict[str, Any]] = Field(default_factory=list)
-
-
-class _ReplyItem(BaseModel):
-    review_id: str
-    draft_text: str
-    original_review: str = ""
-    approval_status: str = "pending"
-
-
-def _model_to_dict(model: Any) -> dict[str, Any]:
-    """Convert a Pydantic model instance to a plain dict."""
-    if hasattr(model, "model_dump"):
-        return model.model_dump()  # pydantic v2
-    return model.dict()  # pydantic v1
-
-
-def _count_schema_errors(errors: list[str]) -> int:
-    """Count schema validation errors (format: 'index N: ...') from retry errors."""
-    return sum(1 for e in errors if e.startswith("index "))
 
 
 class WorkflowService:
@@ -106,646 +65,184 @@ class WorkflowService:
         return self._run_provider_analysis(batch_id, provider, mode)
 
     def run_demo_analysis(self, batch_id: str) -> WorkflowResult:
+        """Execute the full demo analysis pipeline using MockProvider.
+
+        Steps: validate → classify → sentiment → merge → insights → evidence
+               → reply → safety → write DB → finalize.
         """
-        Execute the full demo analysis pipeline:
-
-        1. Validate batch exists and has valid reviews
-        2. Classify reviews
-        3. Analyze sentiment
-        4. Aggregate top 3 issues with evidence
-        5. Draft replies for negative candidates
-        6. Safety check all drafts
-        7. Write all results + traces to DB
-        """
-        t_start = time.time()
-        trace_id = f"trace-{batch_id}"
-
-        # ── Step 0: Validate batch ──────────────────────────────────────
-        batch = self._batch_repo.get_batch(batch_id)
-        if batch is None:
-            log_step("validate_batch", batch_id, status="failed", error="Batch not found")
-            return {
-                "success": False,
-                "batch_id": batch_id,
-                "mode": "demo",
-                "summary": {},
-                "error": f"Batch not found: {batch_id}",
-            }
-
-        reviews = self._review_repo.list_reviews(batch_id, is_valid=True)
-        if not reviews:
-            self._batch_repo.update_status(batch_id, "failed",
-                                           error_message="No valid reviews to analyze.")
-            self._trace_repo.log_step(
-                trace_id=trace_id, batch_id=batch_id,
-                step_name="classification", status="failed",
-                input_summary="0 valid reviews",
-                output_summary="",
-                error_message="No valid reviews found for analysis.",
-                latency_ms=0, model_name="demo",
-            )
-            return {
-                "success": False,
-                "batch_id": batch_id,
-                "mode": "demo",
-                "summary": {"review_count": 0},
-                "error": "No valid reviews to analyze.",
-            }
-
-        review_count = len(reviews)
-        log_step("validate_batch", batch_id, status="ok", review_count=review_count, mode="demo")
-        self._batch_repo.update_status(batch_id, "analyzing")
-
-        # Convert sqlite3.Row to plain dicts for MockProvider
-        review_dicts: list[dict[str, Any]] = [dict(r) for r in reviews]
-
-        try:
-            # ── Step 1: Classification ──────────────────────────────────
-            t1 = time.time()
-            classifications = self._mock.classify_reviews(review_dicts)
-            cls_latency = int((time.time() - t1) * 1000)
-            self._trace_repo.log_step(
-                trace_id=trace_id, batch_id=batch_id,
-                step_name="classification", status="passed",
-                input_summary=f"{review_count} reviews",
-                output_summary=(
-                    f"{len(classifications)} classified | "
-                    f"provider=demo | attempts=1 | "
-                    f"used_fallback=False | schema_ok=True | "
-                    f"schema_errors_count=0"
-                ),
-                latency_ms=cls_latency, model_name="demo",
-            )
-
-            # ── Step 2: Sentiment Analysis ──────────────────────────────
-            t2 = time.time()
-            sentiments = self._mock.analyze_sentiment(review_dicts)
-            sent_latency = int((time.time() - t2) * 1000)
-            self._trace_repo.log_step(
-                trace_id=trace_id, batch_id=batch_id,
-                step_name="sentiment_analysis", status="passed",
-                input_summary=f"{review_count} reviews",
-                output_summary=f"{len(sentiments)} analyzed",
-                latency_ms=sent_latency, model_name="demo",
-            )
-
-            # ── Merge classification + sentiment → review_analysis ─────
-            sent_map = {s["review_id"]: s for s in sentiments}
-            analysis_rows: list[dict[str, Any]] = []
-            for c in classifications:
-                rid = c["review_id"]
-                s = sent_map.get(rid, {})
-                analysis_rows.append({
-                    "review_id": rid,
-                    "topics": c.get("topics", []),
-                    "primary_topic": c.get("primary_topic", "other"),
-                    "topic_confidence": c.get("topic_confidence", 0.80),
-                    "needs_review": c.get("needs_review", False),
-                    "sentiment": s.get("sentiment", "neutral"),
-                    "severity": s.get("severity", 2),
-                    "sentiment_confidence": s.get("sentiment_confidence", 0.80),
-                    "is_negative_candidate": s.get("is_negative_candidate", False),
-                })
-            self._analysis_repo.bulk_insert_analysis(batch_id, analysis_rows)
-            log_step("write_analysis_to_db", batch_id, row_count=len(analysis_rows), mode="demo")
-
-            # ── Step 3: Issue Aggregation (insights + evidence) ────────
-            t3 = time.time()
-            insights = self._mock.generate_insights(review_dicts, analysis_rows)
-            insight_count = len(insights)
-            negative_count = sum(1 for a in analysis_rows if a.get("is_negative_candidate"))
-
-            # Write insight rows (without nested evidence)
-            insight_rows: list[dict[str, Any]] = []
-            for ins in insights:
-                insight_rows.append({
-                    "rank": ins["rank"],
-                    "issue_name": ins["issue_name"],
-                    "issue_summary": ins.get("issue_summary", ""),
-                    "topic": ins["topic"],
-                    "mention_count": ins["mention_count"],
-                    "severity_level": ins["severity_level"],
-                    "priority_score": ins["priority_score"],
-                    "suggested_action": ins["suggested_action"],
-                    "evidence_count": ins.get("evidence_count", 0),
-                    "evidence_status": ins.get("evidence_status", "sufficient"),
-                })
-            self._insight_repo.bulk_insert_insights(batch_id, insight_rows)
-            for ins in insights:
-                log_step("generate_insights", batch_id, rank=ins.get("rank"),
-                        issue_name=ins.get("issue_name"), topic=ins.get("topic"),
-                        evidence_count=ins.get("evidence_count"), mode="demo")
-            ins_latency = int((time.time() - t3) * 1000)
-
-            # Write evidence rows — resolve insight IDs from DB
-            inserted_insights = self._insight_repo.get_top_issues(batch_id)
-            rank_to_id: dict[int, int] = {i["rank"]: i["id"] for i in inserted_insights}
-
-            evidence_rows: list[dict[str, Any]] = []
-            for ins in insights:
-                iid = rank_to_id.get(ins["rank"])
-                if iid is None:
-                    continue
-                for ev in ins.get("evidence", []):
-                    evidence_rows.append({
-                        "insight_id": iid,
-                        "review_id": ev["review_id"],
-                        "evidence_text": ev["evidence_text"],
-                        "evidence_reason": ev.get("evidence_reason", ""),
-                    })
-            evidence_count = len(evidence_rows)
-            if evidence_rows:
-                self._insight_repo.bulk_insert_evidence(batch_id, evidence_rows)
-            log_step("evidence_check", batch_id, evidence_count=evidence_count,
-                    insight_count=insight_count, mode="demo")
-
-            self._trace_repo.log_step(
-                trace_id=trace_id, batch_id=batch_id,
-                step_name="issue_aggregation", status="passed",
-                input_summary=f"{len(analysis_rows)} analyses",
-                output_summary=f"{insight_count} insights, {evidence_count} evidence",
-                latency_ms=ins_latency, model_name="demo",
-            )
-
-            # ── Step 4: Evidence Check ──────────────────────────────────
-            ev_valid = sum(1 for ins in insights if ins.get("evidence_status", "sufficient") == "sufficient")
-            ev_rejected = sum(1 for ins in insights if ins.get("evidence_status") == "invalid")
-            ev_insufficient = sum(1 for ins in insights if ins.get("evidence_status") == "evidence_insufficient")
-            self._trace_repo.log_step(
-                trace_id=trace_id, batch_id=batch_id,
-                step_name="evidence_check", status="passed",
-                input_summary=f"{insight_count} insights",
-                output_summary=(
-                    f"{evidence_count} evidence records across {insight_count} issues | "
-                    f"valid_issues_count={ev_valid} | "
-                    f"rejected_issues_count={ev_rejected} | "
-                    f"evidence_insufficient_count={ev_insufficient}"
-                ),
-                latency_ms=0, model_name="demo",
-            )
-
-            # ── Step 5: Reply Drafting ──────────────────────────────────
-            t5 = time.time()
-            drafts = self._mock.draft_replies(review_dicts, analysis_rows)
-
-            # Apply safety check
-            safe_drafts = self._mock.check_safety(drafts)
-            draft_latency = int((time.time() - t5) * 1000)
-
-            draft_count = len(safe_drafts)
-            blocked_count = sum(1 for d in safe_drafts if d.get("safety_status") == "blocked")
-            rewrite_count = sum(1 for d in safe_drafts if d.get("safety_status") == "rewrite_required")
-            pass_count = sum(1 for d in safe_drafts if d.get("safety_status") == "pass")
-
-            self._trace_repo.log_step(
-                trace_id=trace_id, batch_id=batch_id,
-                step_name="reply_drafting", status="passed",
-                input_summary=f"{negative_count} negative candidates",
-                output_summary=f"{draft_count} drafts generated",
-                latency_ms=draft_latency, model_name="demo",
-            )
-
-            # ── Step 6: Safety Check ────────────────────────────────────
-            for d in safe_drafts:
-                log_step("safety_check", batch_id, review_id=d.get("review_id"),
-                        safety_status=d.get("safety_status"),
-                        risk_types=d.get("risk_types", []), mode="demo")
-            safety_status = "warning" if blocked_count > 0 else "passed"
-            self._trace_repo.log_step(
-                trace_id=trace_id, batch_id=batch_id,
-                step_name="safety_check", status=safety_status,
-                input_summary=f"{draft_count} drafts",
-                output_summary=(
-                    f"{pass_count} pass, {rewrite_count} rewrite_required, {blocked_count} blocked | "
-                    f"pass_count={pass_count} | "
-                    f"rewrite_required_count={rewrite_count} | "
-                    f"blocked_count={blocked_count}"
-                ),
-                latency_ms=0, model_name="demo",
-            )
-
-            # ── Write reply_drafts to DB ────────────────────────────────
-            if safe_drafts:
-                draft_rows: list[dict[str, Any]] = []
-                for d in safe_drafts:
-                    draft_rows.append({
-                        "review_id": d["review_id"],
-                        "original_review": d.get("original_review", ""),
-                        "draft_text": d.get("draft_text", ""),
-                        "safety_status": d.get("safety_status", "pass"),
-                        "risk_types": d.get("risk_types", []),
-                        "approval_status": d.get("approval_status", "pending"),
-                        "model_name": "demo",
-                    })
-                self._reply_repo.bulk_insert_drafts(batch_id, draft_rows)
-            log_step("write_drafts_to_db", batch_id, draft_count=draft_count, mode="demo")
-
-            # ── Final: Update batch status ──────────────────────────────
-            pending_count = sum(1 for d in safe_drafts if d.get("approval_status") == "pending")
-            self._batch_repo.update_status(
-                batch_id, "analyzed",
-                negative_review_count=negative_count,
-                pending_reply_count=pending_count,
-            )
-
-            total_latency = int((time.time() - t_start) * 1000)
-            logger.success(
-                f"Demo analysis complete for {batch_id}: "
-                f"{review_count} reviews, {insight_count} insights, {draft_count} drafts, "
-                f"{total_latency}ms"
-            )
-
-            return {
-                "success": True,
-                "batch_id": batch_id,
-                "mode": "demo",
-                "summary": {
-                    "review_count": review_count,
-                    "negative_count": negative_count,
-                    "insight_count": insight_count,
-                    "draft_count": draft_count,
-                    "blocked_count": blocked_count,
-                    "rewrite_count": rewrite_count,
-                    "pass_count": pass_count,
-                    "evidence_count": evidence_count,
-                    "trace_count": 6,
-                },
-                "error": None,
-            }
-
-        except Exception as exc:
-            log_step("demo_analysis_error", batch_id, status="failed", error=str(exc), mode="demo")
-            logger.error(f"Demo analysis failed for {batch_id}: {exc}")
-            error_msg = str(exc)
-            self._batch_repo.update_status(batch_id, "failed", error_message=error_msg)
-            return {
-                "success": False,
-                "batch_id": batch_id,
-                "mode": "demo",
-                "summary": {},
-                "error": error_msg,
-            }
+        return self._run_pipeline(
+            batch_id=batch_id,
+            mode="demo",
+            provider=self._mock,
+            model_name="demo",
+            skip_live_extra_traces=True,
+        )
 
     # ── Live Provider Analysis ───────────────────────────────────────────────
 
     def _run_provider_analysis(
         self, batch_id: str, provider: BaseLLMProvider, mode: str
     ) -> WorkflowResult:
-        """8-step analysis pipeline wired to Schema Guard + Structured Retry +
-        Evidence Guard + Safety Guardrails. Never crashes — uses fallbacks."""
+        """Execute the full Live/OpenAI analysis pipeline.
+
+        Same step sequence as demo, but each LLM call goes through
+        Schema Guard + Structured Retry. Never crashes — uses fallbacks.
+        """
+        model_name = getattr(provider, "_model", mode)
+        provider._batch_id = batch_id
+        return self._run_pipeline(
+            batch_id=batch_id,
+            mode=mode,
+            provider=provider,
+            model_name=model_name,
+            skip_live_extra_traces=False,
+        )
+
+    # ── Internal pipeline orchestrator ─────────────────────────────────────
+
+    def _run_pipeline(
+        self,
+        batch_id: str,
+        mode: str,
+        provider,
+        model_name: str,
+        skip_live_extra_traces: bool,
+    ) -> WorkflowResult:
+        """Shared pipeline orchestrator for both demo and live modes."""
         t_start = time.time()
         trace_id = f"trace-{batch_id}"
-        model_name = getattr(provider, "_model", mode)
-        provider._batch_id = batch_id  # wire batch_id for structured logging
 
-        # ── Step 0: Validate batch ──────────────────────────────────
-        batch = self._batch_repo.get_batch(batch_id)
-        if batch is None:
-            log_step("validate_batch", batch_id, status="failed", error="Batch not found", mode=mode)
-            return {"success": False, "batch_id": batch_id, "mode": mode,
-                    "summary": {}, "error": f"Batch not found: {batch_id}"}
+        # Step 0: Validate batch
+        err = run_batch_validation(
+            batch_id=batch_id, trace_id=trace_id, mode=mode,
+            model_name=model_name,
+            batch_repo=self._batch_repo, review_repo=self._review_repo,
+            trace_repo=self._trace_repo,
+        )
+        if err is not None:
+            return err
 
         reviews = self._review_repo.list_reviews(batch_id, is_valid=True)
-        if not reviews:
-            log_step("validate_batch", batch_id, status="failed", error="No valid reviews", review_count=0, mode=mode)
-            self._batch_repo.update_status(batch_id, "failed",
-                                           error_message="No valid reviews to analyze.")
-            self._trace_repo.log_step(
-                trace_id=trace_id, batch_id=batch_id,
-                step_name="input_validation", status="failed",
-                input_summary="0 valid reviews", output_summary="",
-                error_message="No valid reviews found.", latency_ms=0,
-                model_name=model_name,
-            )
-            return {"success": False, "batch_id": batch_id, "mode": mode,
-                    "summary": {"review_count": 0}, "error": "No valid reviews to analyze."}
-
         review_count = len(reviews)
         log_step("validate_batch", batch_id, status="ok", review_count=review_count, mode=mode)
-        self._batch_repo.update_status(batch_id, "analyzing")
         review_dicts: list[dict[str, Any]] = [dict(r) for r in reviews]
 
-        # ── Step 1: input_validation (already done by upload) ─────────
-        self._trace_repo.log_step(
-            trace_id=trace_id, batch_id=batch_id,
-            step_name="input_validation", status="passed",
-            input_summary=f"{batch.get('total_rows', review_count)} raw reviews",
-            output_summary=f"{review_count} valid reviews",
-            latency_ms=0, model_name=model_name,
-        )
-
-        # ── Step 2: data_cleaning ────────────────────────────────────
-        valid_review_ids = {str(r.get("review_id")) for r in review_dicts if r.get("review_id")}
-        batch_reviews_all = self._review_repo.list_reviews(batch_id, is_valid=None)
-        dup_count = sum(1 for r in batch_reviews_all if int(getattr(r, "is_duplicate", 0) or 0))
-        empty_count = sum(1 for r in batch_reviews_all if int(getattr(r, "is_empty", 0) or 0))
-        self._trace_repo.log_step(
-            trace_id=trace_id, batch_id=batch_id,
-            step_name="data_cleaning", status="warning" if (dup_count or empty_count) else "passed",
-            input_summary=f"{len(batch_reviews_all)} raw reviews",
-            output_summary=f"{review_count} valid, {empty_count} empty, {dup_count} duplicate",
-            latency_ms=0, model_name=model_name,
-        )
+        # Live-mode extra trace steps
+        if not skip_live_extra_traces:
+            batch = self._batch_repo.get_batch(batch_id)
+            self._trace_repo.log_step(
+                trace_id=trace_id, batch_id=batch_id,
+                step_name="input_validation", status="passed",
+                input_summary=f"{batch.get('total_rows', review_count)} raw reviews",
+                output_summary=f"{review_count} valid reviews",
+                latency_ms=0, model_name=model_name,
+            )
+            valid_review_ids = {str(r.get("review_id")) for r in review_dicts if r.get("review_id")}
+            batch_reviews_all = self._review_repo.list_reviews(batch_id, is_valid=None)
+            dup_count = sum(1 for r in batch_reviews_all if int(getattr(r, "is_duplicate", 0) or 0))
+            empty_count = sum(1 for r in batch_reviews_all if int(getattr(r, "is_empty", 0) or 0))
+            self._trace_repo.log_step(
+                trace_id=trace_id, batch_id=batch_id,
+                step_name="data_cleaning", status="warning" if (dup_count or empty_count) else "passed",
+                input_summary=f"{len(batch_reviews_all)} raw reviews",
+                output_summary=f"{review_count} valid, {empty_count} empty, {dup_count} duplicate",
+                latency_ms=0, model_name=model_name,
+            )
 
         try:
-            # ── Step 3: classification ───────────────────────────────
-            log_step("classification_start", batch_id, review_count=review_count, mode=mode, model=model_name)
-            t3 = time.time()
-            cls_retry = run_with_schema_retry(
-                call_fn=lambda attempt: provider.classify_reviews(review_dicts),
-                schema_cls=_ClassificationItem,
-                many=True, max_retries=1,
-                fallback_fn=lambda: self._fallback_classify(review_dicts),
+            # Step 1: Classification
+            classifications = run_classification(
+                batch_id=batch_id, trace_id=trace_id, mode=mode,
+                model_name=model_name, review_dicts=review_dicts,
+                provider=provider,
+                fallback_classify_fn=self._fallback_classify,
+                trace_repo=self._trace_repo,
+            )
+
+            # Step 2: Sentiment
+            sentiments = run_sentiment(
+                batch_id=batch_id, trace_id=trace_id, mode=mode,
+                model_name=model_name, review_dicts=review_dicts,
+                provider=provider,
+                fallback_sentiment_fn=self._fallback_sentiment,
+                trace_repo=self._trace_repo,
+            )
+
+            # Step 2b: Consistency check (classification ↔ sentiment alignment)
+            run_consistency_check(
+                classifications=classifications,
+                sentiments=sentiments,
+                review_dicts=review_dicts,
                 batch_id=batch_id,
-            )
-            classifications: list[dict[str, Any]]
-            if isinstance(cls_retry.data, list):
-                classifications = [_model_to_dict(m) for m in cls_retry.data]
-            else:
-                classifications = []
-            cls_latency = int((time.time() - t3) * 1000)
-            log_step("classification_done", batch_id,
-                    classified_count=len(classifications),
-                    attempts=cls_retry.attempts,
-                    fallback_used=cls_retry.used_fallback,
-                    schema_errors=cls_retry.errors,
-                    latency_ms=cls_latency, mode=mode)
-            self._trace_repo.log_step(
-                trace_id=trace_id, batch_id=batch_id,
-                step_name="classification", status="warning" if cls_retry.used_fallback else "passed",
-                input_summary=f"{review_count} reviews",
-                output_summary=(
-                    f"{len(classifications)} classified | "
-                    f"provider={model_name} | "
-                    f"attempts={cls_retry.attempts} | "
-                    f"used_fallback={cls_retry.used_fallback} | "
-                    f"schema_ok={cls_retry.ok} | "
-                    f"schema_errors_count={_count_schema_errors(cls_retry.errors)}"
-                ),
-                latency_ms=cls_latency, model_name=model_name,
-                error_message="; ".join(cls_retry.errors) if cls_retry.errors else None,
+                trace_id=trace_id,
+                mode=mode,
+                model_name=model_name,
+                trace_repo=self._trace_repo,
             )
 
-            # ── Step 4: sentiment_analysis ───────────────────────────
-            t4 = time.time()
-            sent_retry = run_with_schema_retry(
-                call_fn=lambda attempt: provider.analyze_sentiment(review_dicts),
-                schema_cls=_SentimentItem,
-                many=True, max_retries=1,
-                fallback_fn=lambda: self._fallback_sentiment(review_dicts),
-                batch_id=batch_id,
-            )
-            sentiments: list[dict[str, Any]]
-            if isinstance(sent_retry.data, list):
-                sentiments = [_model_to_dict(m) for m in sent_retry.data]
-            else:
-                sentiments = []
-            sent_latency = int((time.time() - t4) * 1000)
-            log_step("sentiment_done", batch_id,
-                    analyzed_count=len(sentiments),
-                    attempts=sent_retry.attempts,
-                    fallback_used=sent_retry.used_fallback,
-                    schema_errors=sent_retry.errors,
-                    latency_ms=sent_latency, mode=mode)
-            self._trace_repo.log_step(
-                trace_id=trace_id, batch_id=batch_id,
-                step_name="sentiment_analysis", status="warning" if sent_retry.used_fallback else "passed",
-                input_summary=f"{review_count} reviews",
-                output_summary=f"{len(sentiments)} analyzed (retries={sent_retry.attempts}, fallback={sent_retry.used_fallback})",
-                latency_ms=sent_latency, model_name=model_name,
-                error_message="; ".join(sent_retry.errors) if sent_retry.errors else None,
+            # Step 3: Merge + write analysis
+            analysis_rows = merge_classification_sentiment(classifications, sentiments)
+            write_analysis_to_db(batch_id, mode, analysis_rows, self._analysis_repo)
+
+            # Step 4: Insights + evidence
+            insights, insight_count, negative_count = run_insights(
+                batch_id=batch_id, trace_id=trace_id, mode=mode,
+                model_name=model_name, review_dicts=review_dicts,
+                analysis_rows=analysis_rows, provider=provider,
+                fallback_insights_fn=self._fallback_insights,
+                trace_repo=self._trace_repo, insight_repo=self._insight_repo,
             )
 
-            # Merge classification + sentiment → analysis_rows
-            sent_map: dict[str, dict[str, Any]] = {}
-            for s in sentiments:
-                sid = s.get("review_id", "")
-                if sid:
-                    sent_map[sid] = s
-            analysis_rows: list[dict[str, Any]] = []
-            for c in classifications:
-                rid = c.get("review_id", "")
-                s = sent_map.get(rid, {})
-                analysis_rows.append({
-                    "review_id": rid,
-                    "topics": c.get("topics", []),
-                    "primary_topic": c.get("primary_topic", "other"),
-                    "topic_confidence": c.get("topic_confidence", 0.80),
-                    "needs_review": c.get("needs_review", False),
-                    "sentiment": s.get("sentiment", "neutral"),
-                    "severity": s.get("severity", 2),
-                    "sentiment_confidence": s.get("sentiment_confidence", 0.80),
-                    "is_negative_candidate": s.get("is_negative_candidate", False),
-                })
-            if analysis_rows:
-                self._analysis_repo.bulk_insert_analysis(batch_id, analysis_rows)
-            log_step("write_analysis_to_db", batch_id, row_count=len(analysis_rows), mode=mode)
-
-            # ── Step 5: issue_aggregation ────────────────────────────
-            t5 = time.time()
-            ins_retry = run_with_schema_retry(
-                call_fn=lambda attempt: provider.generate_insights(review_dicts, analysis_rows),
-                schema_cls=_InsightItem,
-                many=True, max_retries=1,
-                fallback_fn=lambda: self._fallback_insights(review_dicts, analysis_rows),
-                batch_id=batch_id,
-            )
-            insights: list[dict[str, Any]]
-            if isinstance(ins_retry.data, list):
-                insights = [_model_to_dict(m) for m in ins_retry.data]
-            else:
-                insights = []
-            insight_count = len(insights)
-            negative_count = sum(1 for a in analysis_rows if a.get("is_negative_candidate"))
-
-            # Write insight rows (normalize evidence_status to DB constraint)
-            def _norm_evidence_status(raw: str) -> str:
-                return "insufficient" if "insufficient" in raw else "sufficient"
-
-            insight_db_rows: list[dict[str, Any]] = []
-            for ins in insights:
-                insight_db_rows.append({
-                    "rank": ins.get("rank", 1),
-                    "issue_name": ins.get("issue_name", ""),
-                    "issue_summary": ins.get("issue_summary", ""),
-                    "topic": ins.get("topic", "other"),
-                    "mention_count": ins.get("mention_count", 0),
-                    "severity_level": ins.get("severity_level", "medium"),
-                    "priority_score": ins.get("priority_score", 0.0),
-                    "suggested_action": ins.get("suggested_action", ""),
-                    "evidence_count": ins.get("evidence_count", 0),
-                    "evidence_status": _norm_evidence_status(ins.get("evidence_status", "sufficient")),
-                })
-            self._insight_repo.bulk_insert_insights(batch_id, insight_db_rows)
-            for ins in insights:
-                log_step("generate_insights", batch_id, rank=ins.get("rank"),
-                        issue_name=ins.get("issue_name"), topic=ins.get("topic"),
-                        evidence_count=ins.get("evidence_count"),
-                        fallback_used=ins_retry.used_fallback,
-                        attempts=ins_retry.attempts, mode=mode)
-            ins_latency = int((time.time() - t5) * 1000)
-
-            # ══ Step 6: evidence_check ─══════════════════════════════
-            log_step("evidence_check_start", batch_id, insight_count=insight_count, mode=mode)
-            evidence_result = validate_insight_evidence(insights, review_dicts, min_evidence_count=2, batch_id=batch_id)
-            ecount = sum(len(ir.evidence_review_ids) for ir in evidence_result.issues)
-            log_step("evidence_check_done", batch_id,
-                    total_evidence=ecount,
-                    valid_issues=len(evidence_result.valid_issues),
-                    rejected_issues=len(evidence_result.rejected_issues),
-                    mode=mode)
-
-            # Write evidence — resolve DB insight IDs from rank
-            inserted_insights = self._insight_repo.get_top_issues(batch_id)
-            rank_to_iid: dict[int, int] = {i["rank"]: i["id"] for i in inserted_insights}
-
-            evidence_db_rows: list[dict[str, Any]] = []
-            for ins in insights:
-                iid = rank_to_iid.get(ins.get("rank", 0))
-                if iid is None:
-                    continue
-                for ev in ins.get("evidence", []):
-                    rid = ev.get("review_id", "")
-                    if rid in valid_review_ids:
-                        evidence_db_rows.append({
-                            "insight_id": iid,
-                            "review_id": rid,
-                            "evidence_text": ev.get("evidence_text", ""),
-                            "evidence_reason": ev.get("evidence_reason", ""),
-                        })
-            if evidence_db_rows:
-                self._insight_repo.bulk_insert_evidence(batch_id, evidence_db_rows)
-            log_step("write_evidence_to_db", batch_id, evidence_count=len(evidence_db_rows), mode=mode)
-
-            self._trace_repo.log_step(
-                trace_id=trace_id, batch_id=batch_id,
-                step_name="issue_aggregation", status="warning" if ins_retry.used_fallback else "passed",
-                input_summary=f"{len(analysis_rows)} analyses",
-                output_summary=f"{insight_count} insights (retries={ins_retry.attempts}, fallback={ins_retry.used_fallback})",
-                latency_ms=ins_latency, model_name=model_name,
-                error_message="; ".join(ins_retry.errors) if ins_retry.errors else None,
-            )
-            e_valid = len(evidence_result.valid_issues)
-            e_rejected = sum(1 for ir in evidence_result.issues if ir.status == "invalid")
-            e_insufficient = sum(1 for ir in evidence_result.issues if ir.status == "evidence_insufficient")
-            self._trace_repo.log_step(
-                trace_id=trace_id, batch_id=batch_id,
-                step_name="evidence_check", status="warning" if (e_rejected or e_insufficient) else "passed",
-                input_summary=f"{insight_count} insights",
-                output_summary=(
-                    f"{ecount} evidence | "
-                    f"valid_issues_count={e_valid} | "
-                    f"rejected_issues_count={e_rejected} | "
-                    f"evidence_insufficient_count={e_insufficient}"
-                ),
-                latency_ms=0, model_name=model_name,
+            # Step 5: Evidence check (live path uses valid_review_ids from live extra traces)
+            vid_set = valid_review_ids if not skip_live_extra_traces else {str(r.get("review_id")) for r in review_dicts}
+            evidence_count, _, _, _ = run_evidence_check(
+                batch_id=batch_id, trace_id=trace_id, mode=mode,
+                model_name=model_name, insights=insights,
+                review_dicts=review_dicts, valid_review_ids=vid_set,
+                trace_repo=self._trace_repo, insight_repo=self._insight_repo,
             )
 
-            # ── Step 7: reply_drafting ───────────────────────────────
-            t7 = time.time()
-            neg_candidates = [a for a in analysis_rows if a.get("is_negative_candidate")]
-            log_step("reply_drafting_start", batch_id, negative_count=len(neg_candidates), mode=mode)
-            if not neg_candidates:
-                neg_candidates = [a for a in analysis_rows if a.get("severity", 2) >= 3]
-            neg_ids = {a["review_id"] for a in neg_candidates}
-
-            neg_review_dicts = [r for r in review_dicts if r.get("review_id") in neg_ids]
-            neg_analyses = [a for a in analysis_rows if a.get("review_id") in neg_ids]
-
-            reply_retry = run_with_schema_retry(
-                call_fn=lambda attempt: provider.draft_replies(neg_review_dicts, neg_analyses),
-                schema_cls=_ReplyItem,
-                many=True, max_retries=1,
-                fallback_fn=lambda: self._fallback_reply(neg_review_dicts),
-                batch_id=batch_id,
-            )
-            drafts: list[dict[str, Any]]
-            if isinstance(reply_retry.data, list):
-                drafts = [_model_to_dict(m) for m in reply_retry.data]
-            else:
-                drafts = []
-            draft_latency = int((time.time() - t7) * 1000)
-
-            # ══ Step 8: safety_check ─═══════════════════════════════
-            safe_drafts = check_many_replies(drafts, batch_id=batch_id)
-            blocked_count = sum(1 for d in safe_drafts if d.get("safety_status") == "blocked")
-            rewrite_count = sum(1 for d in safe_drafts if d.get("safety_status") == "rewrite_required")
-            pass_count = sum(1 for d in safe_drafts if d.get("safety_status") == "pass")
-            for d in safe_drafts:
-                log_step("safety_check", batch_id, review_id=d.get("review_id"),
-                        safety_status=d.get("safety_status"),
-                        risk_types=d.get("risk_types", []), mode=mode)
-
-            self._trace_repo.log_step(
-                trace_id=trace_id, batch_id=batch_id,
-                step_name="reply_drafting", status="warning" if reply_retry.used_fallback else "passed",
-                input_summary=f"{len(neg_candidates)} negative candidates",
-                output_summary=f"{len(drafts)} drafts (retries={reply_retry.attempts}, fallback={reply_retry.used_fallback})",
-                latency_ms=draft_latency, model_name=model_name,
-                error_message="; ".join(reply_retry.errors) if reply_retry.errors else None,
-            )
-            safety_trace_status = "warning" if blocked_count > 0 else "passed"
-            self._trace_repo.log_step(
-                trace_id=trace_id, batch_id=batch_id,
-                step_name="safety_check", status=safety_trace_status,
-                input_summary=f"{len(drafts)} drafts",
-                output_summary=(
-                    f"{pass_count} pass, {rewrite_count} rewrite_required, {blocked_count} blocked | "
-                    f"pass_count={pass_count} | "
-                    f"rewrite_required_count={rewrite_count} | "
-                    f"blocked_count={blocked_count}"
-                ),
-                latency_ms=0, model_name=model_name,
+            # Step 6: Reply drafting
+            drafts, draft_count = run_reply_drafting(
+                batch_id=batch_id, trace_id=trace_id, mode=mode,
+                model_name=model_name, review_dicts=review_dicts,
+                analysis_rows=analysis_rows, provider=provider,
+                fallback_reply_fn=self._fallback_reply,
+                trace_repo=self._trace_repo,
             )
 
-            # ── Write reply_drafts to DB ─────────────────────────────
-            if safe_drafts:
-                draft_db_rows: list[dict[str, Any]] = []
-                for d in safe_drafts:
-                    draft_db_rows.append({
-                        "review_id": d.get("review_id", ""),
-                        "original_review": d.get("original_review", ""),
-                        "draft_text": d.get("draft_text", ""),
-                        "safety_status": d.get("safety_status", "pass"),
-                        "risk_types": d.get("risk_types", []),
-                        "approval_status": d.get("approval_status", "pending"),
-                        "model_name": model_name,
-                    })
-                self._reply_repo.bulk_insert_drafts(batch_id, draft_db_rows)
-            log_step("write_drafts_to_db", batch_id, draft_count=len(safe_drafts), mode=mode)
-
-            # ── Final: Update batch status ───────────────────────────
-            pending_count = sum(1 for d in safe_drafts if d.get("approval_status") == "pending")
-            self._batch_repo.update_status(
-                batch_id, "analyzed",
-                negative_review_count=len(neg_candidates),
-                pending_reply_count=pending_count,
+            # Step 7: Safety check
+            safe_drafts, pass_count, rewrite_count, blocked_count = run_safety_check(
+                batch_id=batch_id, trace_id=trace_id, mode=mode,
+                model_name=model_name, drafts=drafts,
+                provider=provider,
+                trace_repo=self._trace_repo,
             )
+
+            # Step 8: Write drafts to DB
+            write_drafts_to_db(batch_id, mode, model_name, safe_drafts, self._reply_repo)
+
+            # Step 9: Finalize
+            result = finalize_batch(
+                batch_id=batch_id, mode=mode, review_count=review_count,
+                negative_count=negative_count, insight_count=insight_count,
+                draft_count=draft_count, blocked_count=blocked_count,
+                rewrite_count=rewrite_count, pass_count=pass_count,
+                evidence_count=evidence_count, trace_count=8,
+                safe_drafts=safe_drafts, batch_repo=self._batch_repo,
+            )
+
             total_latency = int((time.time() - t_start) * 1000)
             logger.success(
-                f"Provider analysis complete for {batch_id} ({mode}): "
-                f"{review_count} reviews, {insight_count} insights, {len(drafts)} drafts, "
-                f"{total_latency}ms"
+                f"{'演示' if mode == 'demo' else '在线'}分析完成 batch={batch_id}："
+                f"评论={review_count}, 洞察={insight_count}, 草稿={draft_count}, "
+                f"耗时={total_latency}ms"
             )
-            return {
-                "success": True, "batch_id": batch_id, "mode": mode,
-                "summary": {
-                    "review_count": review_count,
-                    "negative_count": len(neg_candidates),
-                    "insight_count": insight_count,
-                    "draft_count": len(drafts),
-                    "blocked_count": blocked_count,
-                    "rewrite_count": rewrite_count,
-                    "pass_count": pass_count,
-                    "evidence_count": ecount,
-                    "trace_count": 8,
-                },
-                "error": None,
-            }
+            return result
 
         except Exception as exc:
-            log_step("provider_analysis_error", batch_id, status="failed", error=str(exc), mode=mode)
-            logger.error(f"Provider analysis failed for {batch_id}: {exc}")
+            log_step(f"{mode}_analysis_error", batch_id, status="failed", error=str(exc), mode=mode)
+            logger.error(f"分析失败 batch={batch_id}：{exc}")
             self._batch_repo.update_status(batch_id, "failed", error_message=str(exc))
             return {"success": False, "batch_id": batch_id, "mode": mode,
                     "summary": {}, "error": str(exc)}
@@ -755,32 +252,8 @@ class WorkflowService:
     @staticmethod
     def _fallback_classify(reviews: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Keyword-based classification fallback — never raises."""
-        results: list[dict[str, Any]] = []
-        for r in reviews:
-            rid = r.get("review_id", "")
-            rating = int(r.get("rating", 3))
-            text = str(r.get("review_text", r.get("cleaned_text", ""))).lower()
-            if any(kw in text for kw in ["卫生", "脏", "虫", "异味", "异物", "头发"]):
-                topic = "hygiene"
-            elif any(kw in text for kw in ["等", "排队", "太慢", "半小时", "20分钟", "太久"]):
-                topic = "waiting_time"
-            elif any(kw in text for kw in ["服务", "态度", "员工", "服务员", "店员"]):
-                topic = "service"
-            elif any(kw in text for kw in ["价格", "贵", "不值", "太贵"]):
-                topic = "price"
-            elif any(kw in text for kw in ["环境", "装修", "座位", "吵", "安静"]):
-                topic = "environment"
-            elif "咖啡" in text or "味道" in text or "口感" in text:
-                topic = "product"
-            elif rating <= 2:
-                topic = "waiting_time"
-            else:
-                topic = "other"
-            results.append({
-                "review_id": rid, "topics": [topic], "primary_topic": topic,
-                "topic_confidence": 0.60, "needs_review": rating <= 2,
-            })
-        return results
+        from small_shop_agent.harness.verification.fallback_rules import classify_many_by_keywords
+        return classify_many_by_keywords(reviews)
 
     @staticmethod
     def _fallback_sentiment(reviews: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -825,10 +298,6 @@ class WorkflowService:
                         text = str(r.get("review_text", ""))[:80]
                         break
                 evidence.append({"review_id": rid, "evidence_text": text, "evidence_reason": "Fallback evidence."})
-            _TOPIC_CN = {
-                "hygiene": "卫生", "waiting_time": "等待时间", "service": "服务",
-                "product": "产品", "environment": "环境", "price": "价格", "other": "其他",
-            }
             topic_actions = {
                 "hygiene": "建议排查清洁流程，重点检查异物来源和卫生死角，建立定时巡检制度。",
                 "waiting_time": "建议优化出餐流程，高峰期增加人手或提前备料，等待超15分钟主动致歉。",
@@ -837,7 +306,7 @@ class WorkflowService:
                 "environment": "建议检查店内环境，评估噪音、座位舒适度等影响体验的因素。",
                 "product": "建议复查产品制作流程，确保出餐品质稳定。",
             }
-            topic_cn = _TOPIC_CN.get(topic, topic)
+            topic_cn = TOPIC_CN_MAP.get(topic, topic)
             action = topic_actions.get(topic, "请人工核实具体问题，结合评论内容判断优先级。")
             results.append({
                 "rank": rank, "issue_name": f"{topic_cn}相关问题", "topic": topic,

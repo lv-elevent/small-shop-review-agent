@@ -31,3 +31,18 @@ class BaseLLMProvider(ABC):
     @abstractmethod
     def check_safety(self, drafts: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Check safety of reply drafts and set safety_status/risk_types."""
+
+    def judge_semantic_safety(self, drafts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Semantic safety judge — optional, default no-op (passes all).
+
+        Subclasses override to provide LLM-based semantic safety analysis.
+        Each returned dict should contain: reply_id, semantic_status,
+        risk_types, reason, confidence.
+        """
+        return [{
+            "reply_id": d.get("review_id", ""),
+            "semantic_status": "pass",
+            "risk_types": [],
+            "reason": "语义判定未启用（provider 未实现）。",
+            "confidence": 0.80,
+        } for d in drafts]

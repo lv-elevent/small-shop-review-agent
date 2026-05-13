@@ -10,9 +10,11 @@ CREATE TABLE IF NOT EXISTS traces (
             'data_cleaning',
             'classification',
             'sentiment_analysis',
+            'consistency_check',
             'issue_aggregation',
             'evidence_check',
             'reply_drafting',
+            'reply_drafting_prep',
             'safety_check',
             'human_approval',
             'eval_run'

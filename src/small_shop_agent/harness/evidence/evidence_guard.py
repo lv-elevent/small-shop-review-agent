@@ -4,6 +4,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from small_shop_agent.core.config import MIN_EVIDENCE_COUNT
+from small_shop_agent.utils.logger import log_step
+
 
 # ── Per-issue result ───────────────────────────────────────────────────
 
@@ -67,7 +70,8 @@ def validate_insight_evidence(
     insights: list[dict[str, Any]],
     reviews: list[dict[str, Any]],
     *,
-    min_evidence_count: int = 2,
+    min_evidence_count: int = MIN_EVIDENCE_COUNT,
+    batch_id: str = "",
 ) -> EvidenceGuardResult:
     """Validate that every insight has sufficient evidence bound to real reviews.
 
@@ -75,12 +79,14 @@ def validate_insight_evidence(
         insights: List of insight dicts (any evidence field format).
         reviews: List of review dicts (must have review_id).
         min_evidence_count: Minimum valid evidence review_ids per insight (default 2).
+        batch_id: Optional batch ID for structured logging.
 
     Returns:
         EvidenceGuardResult with ok=True only when all insights are sufficient.
     """
     valid_review_ids = _build_review_id_set(reviews)
     result = EvidenceGuardResult()
+    bid = batch_id or "unknown"
 
     for insight in insights:
         topic = str(insight.get("topic", insight.get("issue_name", "")))
@@ -117,6 +123,9 @@ def validate_insight_evidence(
             status = "sufficient"
             reasons.insert(0, f"证据充足：{len(pres_ids)} 条有效证据")
 
+        log_step("evidence_guard_check", bid, issue_id=issue_id, topic=topic,
+                evidence_status=status, evidence_count=len(pres_ids),
+                missing_count=len(miss_ids))
         issue_result = EvidenceGuardIssueResult(
             issue_id=issue_id,
             topic=topic,

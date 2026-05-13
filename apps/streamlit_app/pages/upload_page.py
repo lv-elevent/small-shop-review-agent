@@ -5,6 +5,7 @@ Upload Page — CSV 上传、校验与 Demo Mode
 
 from __future__ import annotations
 import io
+import os
 from pathlib import Path
 import sys
 import pandas as pd
@@ -20,8 +21,10 @@ from apps.streamlit_app.components.sidebar import render_sidebar
 from small_shop_agent.services.review_service import ReviewService
 from small_shop_agent.services.workflow_service import WorkflowService
 from small_shop_agent.storage.database import execute_migrations
+from small_shop_agent.utils.logger import ensure_logger_configured
 
 execute_migrations()
+ensure_logger_configured()
 
 # ── Page config ──────────────────────────────────────────────────────────
 st.set_page_config(
@@ -121,7 +124,7 @@ def _render_right_panel(has_data: bool):
         <p style="font-weight:600;">必填列：</p>
         <ul><li><code>review_text</code> — 评论正文</li>
         <li><code>rating</code> — 评分 (1-5)</li>
-        <li><code>review_time</code> — 评论时间</li></ul>
+        <li><code>date</code> — 评论时间</li></ul>
         <p style="font-weight:600;">可选列：</p>
         <ul><li><code>review_id</code> — 评论 ID</li>
         <li><code>customer_name</code> — 顾客昵称</li>
@@ -134,7 +137,7 @@ def _render_right_panel(has_data: bool):
         st.download_button(
             "⬇ 下载示例 CSV", data=sample_bytes,
             file_name="sample_reviews.csv", mime="text/csv",
-            use_container_width=True,
+            width='stretch',
         )
     except Exception:
         pass
@@ -143,7 +146,7 @@ def _render_right_panel(has_data: bool):
     try:
         sample_df = pd.read_csv(DEMO_CSV_PATH)
         st.markdown('<p style="font-weight:600; color:#4A3728; margin:8px 0 4px;">示例数据预览</p>', unsafe_allow_html=True)
-        st.dataframe(sample_df, use_container_width=True, hide_index=True, height=180)
+        st.dataframe(sample_df, width='stretch', hide_index=True, height=180)
     except Exception:
         pass
 
@@ -202,13 +205,13 @@ def main() -> None:
 
     with left:
         demo_mode = st.toggle(
-            "🎭 Demo Mode — 使用内置演示数据，无需上传文件",
+            "🎭 演示模式 — 使用内置演示数据，无需上传文件",
             value=st.session_state.get("demo_mode", False), key="demo_mode",
             help="开启后加载示例评论 CSV，可离线体验完整分析流程。",
         )
 
         if demo_mode:
-            st.info("🎭 **Demo Mode 已开启** — 使用内置 15 条示例评论数据。")
+            st.info("🎭 **演示模式已开启** — 使用内置 15 条示例评论数据。")
             try:
                 demo_df = pd.read_csv(DEMO_CSV_PATH)
                 demo_df.columns = [c.strip().lower().replace(" ", "_") for c in demo_df.columns]
@@ -223,6 +226,14 @@ def main() -> None:
         store_type = st.selectbox(
             "🏪 门店类型", options=STORE_TYPES, index=0,
             key="store_type", help="选择门店类型以匹配回复风格和分析维度。",
+        )
+
+        llm_mode = st.selectbox(
+            "🤖 LLM 模式",
+            options=["demo", "live"],
+            index=0 if os.environ.get("LLM_MODE", "demo") != "live" else 1,
+            help="演示使用内置模拟数据离线运行；在线调用 OpenAI 兼容 API，需在 .env 中配置 OPENAI_API_KEY。",
+            key="llm_mode",
         )
 
         if not demo_mode:
@@ -248,10 +259,7 @@ def main() -> None:
                     st.session_state._uploaded_bytes = file_bytes
                     st.session_state._file_name = uploaded_file.name
                     st.toast(f"✅ 上传成功！{len(df)} 条记录。")
-            else:
-                if "uploaded_df" in st.session_state and not demo_mode:
-                    st.session_state.uploaded_df = None
-                    st.session_state._uploaded_bytes = None
+            # Keep uploaded data across page navigations — only clear on explicit re-upload
 
         # Show preview if data loaded
         if st.session_state.get("uploaded_df") is not None:
@@ -260,9 +268,9 @@ def main() -> None:
             st.markdown('<p class="section-title">📋 数据预览</p>', unsafe_allow_html=True)
             with st.expander(f"共 {len(df)} 条评论 — 点击展开", expanded=False):
                 display_cols = [c for c in df.columns if c in (
-                    "review_id", "review_text", "rating", "review_time", "customer_name", "platform"
+                    "review_id", "review_text", "rating", "date", "review_time", "customer_name", "platform"
                 )] or list(df.columns)
-                st.dataframe(df[display_cols].head(10), use_container_width=True, hide_index=True)
+                st.dataframe(df[display_cols], width='stretch', hide_index=True)
 
         st.markdown("<br>", unsafe_allow_html=True)
         has_data = st.session_state.get("uploaded_df") is not None and len(
@@ -270,7 +278,7 @@ def main() -> None:
         ) > 0
 
         start_clicked = st.button(
-            "🚀 开始分析", type="primary", use_container_width=True,
+            "🚀 开始分析", type="primary", width='stretch',
             disabled=not has_data, key="start_analysis",
         )
 
@@ -294,13 +302,53 @@ def main() -> None:
             else:
                 st.session_state.latest_validation_result = result["validation"]
                 st.session_state.current_batch_id = result["batch_id"]
+                st.query_params["batch_id"] = result["batch_id"]  # survive browser refresh
                 _render_validation_cards(result["validation"])
 
-                # Step 2: Run demo analysis
-                with st.spinner("正在运行分析流水线（分类 → 情绪 → 问题聚合 → 回复草稿 → 安全检查）…"):
-                    wf_result = ws.run_demo_analysis(result["batch_id"])
+                # Step 2: Run analysis
+                from small_shop_agent.core.config import WORKFLOW_RUNTIME
+
+                mode_label = "在线 (OpenAI)" if llm_mode == "live" else "演示"
+                runtime_label = "agent_graph" if WORKFLOW_RUNTIME == "agent_graph" else "pipeline"
+
+                with st.spinner(
+                    f"正在运行分析 [{mode_label} · {runtime_label}]"
+                    f"（分类 → 情绪 → 问题聚合 → 回复草稿 → 安全检查）…"
+                ):
+                    if WORKFLOW_RUNTIME == "agent_graph":
+                        from small_shop_agent.agent_runtime.runner import run_with_agent_runtime
+                        agent_state = run_with_agent_runtime(result["batch_id"], mode=llm_mode)
+                        errs = agent_state.get("errors", [])
+                        review_count = len(agent_state.get("reviews", []))
+                        wf_result = {
+                            "success": len(errs) == 0,
+                            "batch_id": result["batch_id"],
+                            "mode": llm_mode,
+                            "summary": {
+                                "review_count": review_count,
+                                "negative_count": agent_state.get("_negative_count", 0),
+                                "insight_count": agent_state.get("_insight_count", 0),
+                                "draft_count": agent_state.get("_draft_count", 0),
+                                "blocked_count": agent_state.get("_blocked_count", 0),
+                                "evidence_count": agent_state.get("_evidence_count", 0),
+                                "pass_count": agent_state.get("_pass_count", 0),
+                                "trace_count": 9,
+                            },
+                            "error": errs[0]["message"] if errs else None,
+                        }
+                    else:
+                        wf_result = ws.run_analysis(result["batch_id"], mode=llm_mode)
 
                 st.session_state.latest_workflow_result = wf_result
+
+                # Runtime badge
+                badge_color = "#6C5CE7" if WORKFLOW_RUNTIME == "agent_graph" else "#2F6B4F"
+                badge_icon = "🤖" if WORKFLOW_RUNTIME == "agent_graph" else "🏠"
+                st.markdown(
+                    f"<span style='background:{badge_color};color:#fff;padding:2px 8px;"
+                    f"border-radius:4px;font-size:0.75rem;'>{badge_icon} runtime: {runtime_label}</span>",
+                    unsafe_allow_html=True,
+                )
 
                 if wf_result["success"]:
                     s = wf_result["summary"]

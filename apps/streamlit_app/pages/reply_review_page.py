@@ -16,11 +16,15 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from apps.streamlit_app.components.sidebar import render_sidebar
+from apps.streamlit_app.components.ui_helpers import safe_html
+from small_shop_agent.domain.business_rules import TOPIC_CN_MAP
 from small_shop_agent.services.reply_service import ReplyService
 from small_shop_agent.storage.repositories.reply_repository import ReplyRepository
 from small_shop_agent.storage.database import execute_migrations, get_connection
+from small_shop_agent.utils.logger import ensure_logger_configured
 
 execute_migrations()
+ensure_logger_configured()
 
 # ── Page config ──────────────────────────────────────────────────────────
 st.set_page_config(
@@ -234,7 +238,7 @@ def _load_reply_review_data(batch_id: str) -> dict:
             d["severity"] = "medium"
         else:
             d["severity"] = "low"
-        d["issue"] = _TOPIC_CN.get(am.get("primary_topic", ""), am.get("primary_topic", "—"))
+        d["issue"] = TOPIC_CN_MAP.get(am.get("primary_topic", ""), am.get("primary_topic", "—"))
         # Ensure risk_types is a list
         if isinstance(d.get("risk_types"), str):
             import json
@@ -257,15 +261,6 @@ def _load_reply_review_data(batch_id: str) -> dict:
     }
 
 
-_TOPIC_CN: dict[str, str] = {
-    "hygiene": "卫生",
-    "waiting_time": "等待时间",
-    "service": "服务",
-    "product": "产品",
-    "environment": "环境",
-    "price": "价格",
-    "other": "其他",
-}
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -370,7 +365,7 @@ def _render_pagination(total: int, page_size: int, page_key: str) -> int:
     bc_empty, bc_prev, bc_info, bc_next = st.columns([3, 1, 2, 1])
     with bc_prev:
         if st.button("◀", key=f"{page_key}_prev", disabled=(cur == 0),
-                     use_container_width=True):
+                     width='stretch'):
             st.session_state[page_key] = cur - 1
             st.session_state.reply_selected_idx = 0
             st.rerun()
@@ -382,7 +377,7 @@ def _render_pagination(total: int, page_size: int, page_key: str) -> int:
         )
     with bc_next:
         if st.button("▶", key=f"{page_key}_next", disabled=(cur >= total_pages - 1),
-                     use_container_width=True):
+                     width='stretch'):
             st.session_state[page_key] = cur + 1
             st.session_state.reply_selected_idx = 0
             st.rerun()
@@ -400,6 +395,11 @@ def main() -> None:
 
     reply_svc = ReplyService()
     batch_id = st.session_state.get("current_batch_id")
+    if not batch_id:
+        qp_bid = st.query_params.get("batch_id")
+        if qp_bid:
+            st.session_state.current_batch_id = qp_bid
+            batch_id = qp_bid
 
     # ── No batch ──
     if not batch_id:
@@ -468,7 +468,7 @@ font-size:0.82rem;padding:2px 12px;border-radius:12px;margin-left:8px;">
     for i, (key, label) in enumerate(filters):
         with fc[i]:
             active = st.session_state.rr_filter == key
-            if st.button(label, key=f"filter_{key}", use_container_width=True,
+            if st.button(label, key=f"filter_{key}", width='stretch',
                         type="primary" if active else "secondary"):
                 st.session_state.rr_filter = key
                 st.session_state.rr_queue_page = 0
@@ -534,8 +534,8 @@ font-size:0.82rem;padding:2px 12px;border-radius:12px;margin-left:8px;">
                 rc1, rc2 = st.columns([9, 1], gap="small")
                 with rc1:
                     qi_md = f"""<div class="{row_class}">
-<span class="qi-id">{d['review_id']}</span>
-<span class="qi-text">{snippet}</span>
+<span class="qi-id">{safe_html(d['review_id'])}</span>
+<span class="qi-text">{safe_html(snippet)}</span>
 <span style="font-weight:600;font-size:0.76rem;color:{sev_c};">● {sev_l}</span>
 <span class="qi-badge" style="color:{sb_c};background:{sb_bg};">{sb_label}</span>
 </div>"""
@@ -543,10 +543,10 @@ font-size:0.82rem;padding:2px 12px;border-radius:12px;margin-left:8px;">
                 with rc2:
                     if is_selected:
                         st.button("✓", key=f"sel_{d['id']}",
-                                  use_container_width=True, type="primary")
+                                  width='stretch', type="primary")
                     else:
                         if st.button("›", key=f"sel_{d['id']}",
-                                    use_container_width=True, type="secondary"):
+                                    width='stretch', type="secondary"):
                             st.session_state.reply_selected_idx = i
                             st.rerun()
 
@@ -579,15 +579,15 @@ font-size:0.82rem;padding:2px 12px;border-radius:12px;margin-left:8px;">
 
             issues_html = ""
             for issue in d.get("risk_types", []):
-                issues_html += f'<div class="rp-safety-issue">· {issue}</div>'
+                issues_html += f'<div class="rp-safety-issue">· {safe_html(issue)}</div>'
 
-            original_text = d.get("original_review", "") or ""
+            original_text = safe_html(d.get("original_review", "") or "")
 
             st.markdown(f"""<div class="rp-box">
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
 <div>
 <span style="font-weight:700;font-size:0.95rem;color:#4A3728;">💬 AI 回复草稿</span>
-<span style="font-size:0.78rem;color:#A09080;margin-left:6px;">← {d['review_id']}</span>
+<span style="font-size:0.78rem;color:#A09080;margin-left:6px;">← {safe_html(d['review_id'])}</span>
 </div>
 <div style="display:flex;gap:8px;">
 {_safety_badge(safety)}
@@ -597,9 +597,9 @@ font-size:0.82rem;padding:2px 12px;border-radius:12px;margin-left:8px;">
 <div class="rp-label">📝 原始评论</div>
 <div class="rp-review-box">{original_text}</div>
 <div style="margin-top:6px;">
-<span class="rp-meta">📱 {d.get('platform', '—')}</span>
-<span class="rp-meta" style="margin-left:12px;">⭐ {d.get('rating', '—')}/5</span>
-<span class="rp-meta" style="margin-left:12px;">🏷 {d.get('issue', '—')}</span>
+<span class="rp-meta">📱 {safe_html(d.get('platform', '—'))}</span>
+<span class="rp-meta" style="margin-left:12px;">⭐ {safe_html(d.get('rating', '—'))}/5</span>
+<span class="rp-meta" style="margin-left:12px;">🏷 {safe_html(d.get('issue', '—'))}</span>
 </div>
 <div style="margin-top:14px;">
 <div class="rp-safety-bar" style="background:{sc_bg};color:{sc_c};">{sc_label}</div>
@@ -644,7 +644,7 @@ font-size:0.82rem;padding:2px 12px;border-radius:12px;margin-left:8px;">
                     if st.button(
                         "✅ 批准发布",
                         key=f"{key_prefix}_approve",
-                        use_container_width=True,
+                        width='stretch',
                         type="primary",
                         disabled=blocked_safety,
                     ):
@@ -659,7 +659,7 @@ font-size:0.82rem;padding:2px 12px;border-radius:12px;margin-left:8px;">
                     if st.button(
                         "📝 保存修改",
                         key=f"{key_prefix}_save",
-                        use_container_width=True,
+                        width='stretch',
                     ):
                         if not edited.strip():
                             st.toast("❌ 回复内容不能为空", icon="❌")
@@ -672,7 +672,7 @@ font-size:0.82rem;padding:2px 12px;border-radius:12px;margin-left:8px;">
                                 st.toast(f"❌ 保存失败：{result.get('error', '')}", icon="❌")
 
                 with bc3:
-                    with st.popover("❌ 驳回", use_container_width=True):
+                    with st.popover("❌ 驳回", width='stretch'):
                         reason = st.text_area(
                             "驳回原因", placeholder="请输入驳回原因…",
                             key=f"{key_prefix}_reason",
