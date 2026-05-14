@@ -912,54 +912,43 @@ def _render_timeline(steps: list[dict], batch_id: str, latest_eval: dict | None)
     )
 
 
-def _render_quality_summary(latest_eval: dict | None) -> tuple[float, float, float, int, int, int]:
-    if latest_eval:
-        ta = latest_eval.get("topic_accuracy", 0) or 0
-        sa = latest_eval.get("sentiment_accuracy", 0) or 0
-        unsafe = latest_eval.get("unsafe_reply_count", 0) or 0
-        schema_fail = latest_eval.get("schema_failure_count", 0) or 0
-        total_cases = latest_eval.get("total_eval_cases", 0) or 0
-        composite = round((ta + sa) / 2, 2)
-    else:
-        ta = sa = composite = 0
-        unsafe = schema_fail = total_cases = 0
+def _render_quality_tab(latest_eval: dict | None) -> tuple[float, float, float, int, int, int]:
+    """Render quality check tab content. Returns (ta, sa, composite, total_cases, unsafe, schema_fail)."""
+    if latest_eval is None:
+        st.info("暂无质量检查结果，点击下方「重新检查质量」后会显示结果。")
+        return 0, 0, 0, 0, 0, 0
 
-    pass_label = "评测通过" if latest_eval and composite >= 0.7 else "等待检查" if not latest_eval else "建议复查"
+    ta = latest_eval.get("topic_accuracy", 0) or 0
+    sa = latest_eval.get("sentiment_accuracy", 0) or 0
+    unsafe = latest_eval.get("unsafe_reply_count", 0) or 0
+    schema_fail = latest_eval.get("schema_failure_count", 0) or 0
+    total_cases = latest_eval.get("total_eval_cases", 0) or 0
+    composite = round((ta + sa) / 2, 2)
 
-    def card(label: str, value: str, sub: str, color: str, progress: float) -> str:
-        width = max(0, min(100, int(progress * 100)))
-        return f"""
-        <div class="quality-card">
-            <div class="quality-label">{safe_html(label)}</div>
-            <div class="quality-value" style="color:{color};">{safe_html(value)}</div>
-            <div class="quality-sub">{safe_html(sub)}</div>
-            <div class="progress-track"><div class="progress-fill" style="width:{width}%;background:{color};"></div></div>
-        </div>
-        """
+    if total_cases == 0:
+        st.info("暂无可匹配样例，准确率暂时无法计算。当前评论与评测基准不一致。")
+        return ta, sa, composite, total_cases, unsafe, schema_fail
 
-    cards = [
-        card("问题分类准确率", _pct(ta), "目标 ≥ 70%", _quality_color(ta, 0.7, 0.6), ta),
-        card("好差评判断准确率", _pct(sa), "目标 ≥ 80%", _quality_color(sa, 0.8, 0.7), sa),
-        card("整体质量", f"{int(composite * 100)}/100", "越高越可靠", _quality_color(composite, 0.8, 0.7), composite),
-        card("检查样例数", str(total_cases), "用于质量检查", "#3498DB", 1 if total_cases else 0),
-    ]
-
+    pass_label = "评测通过" if composite >= 0.7 else "建议复查"
     st.markdown(
-        f"""
-        <div class="tabs-shell">
-            <div class="tabs-head">
-                <div class="tab-item active">📊 质量检查</div>
-                <div class="tab-item">⏳ 运行情况</div>
-                <div class="tab-item">🧾 检查记录</div>
-            </div>
-            <div class="tabs-body">
-                <div class="pass-line">✓ {safe_html(pass_label)}</div>
-                <div class="quality-grid">{''.join(cards)}</div>
-            </div>
-        </div>
-        """,
+        f'<span style="color:#27AE60;font-weight:950;font-size:0.82rem;">✓ {safe_html(pass_label)}</span>',
         unsafe_allow_html=True,
     )
+
+    c1, c2, c3, c4 = st.columns(4, gap="small")
+    items = [
+        (c1, "问题分类准确率", _pct(ta), "目标 ≥ 70%", _quality_color(ta, 0.7, 0.6), ta),
+        (c2, "好差评判断准确率", _pct(sa), "目标 ≥ 80%", _quality_color(sa, 0.8, 0.7), sa),
+        (c3, "整体质量", f"{int(composite * 100)}/100", "越高越可靠", _quality_color(composite, 0.8, 0.7), composite),
+        (c4, "检查样例数", str(total_cases), "用于质量检查", "#3498DB", 1),
+    ]
+    for col, label, value, sub, *_rest in items:
+        with col:
+            with st.container(border=True):
+                st.caption(label)
+                st.markdown(f"## {value}")
+                st.caption(sub)
+
     return ta, sa, composite, total_cases, unsafe, schema_fail
 
 
@@ -1107,11 +1096,18 @@ def main() -> None:
         return
 
     try:
-        latest_eval = eval_svc.get_latest_eval()
-        eval_runs = eval_svc.list_eval_runs(limit=10)
+        latest_eval = eval_svc.get_latest_eval_by_batch(batch_id)
+        eval_runs = eval_svc.list_eval_runs_by_batch(batch_id, limit=10)
     except Exception:
         latest_eval = None
         eval_runs = []
+
+    # Extract unsafe / schema_fail from latest_eval for run_metrics
+    if latest_eval:
+        unsafe = latest_eval.get("unsafe_reply_count", 0) or 0
+        schema_fail = latest_eval.get("schema_failure_count", 0) or 0
+    else:
+        unsafe = schema_fail = 0
 
     steps = _build_ordered_steps(traces, latest_eval, batch_id)
 
@@ -1121,14 +1117,13 @@ def main() -> None:
         _render_timeline(steps, batch_id, latest_eval)
 
     with right:
-        _ta, _sa, _composite, _total_cases, unsafe, schema_fail = _render_quality_summary(latest_eval)
-
-        # Avoid Demo-specific wording when current data does not match evaluation benchmark.
-        if latest_eval and _total_cases == 0:
-            st.info("当前评论与检查样例暂不匹配，因此准确率仅供参考。你仍然可以查看处理步骤和导出报告。")
-
-        _render_run_metrics(batch_id, unsafe, schema_fail)
-        _render_eval_records(eval_runs)
+        tab_q, tab_m, tab_r = st.tabs(["📊 质量检查", "⏳ 运行情况", "🧾 检查记录"])
+        with tab_q:
+            _render_quality_tab(latest_eval)
+        with tab_m:
+            _render_run_metrics(batch_id, unsafe, schema_fail)
+        with tab_r:
+            _render_eval_records(eval_runs)
 
         bc1, bc2, bc3 = st.columns([2, 2, 2], gap="medium")
         with bc1:
