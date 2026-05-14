@@ -156,6 +156,14 @@ class EvalService:
         """Return the most recent eval result."""
         return self._eval_repo.get_latest_eval()
 
+    def get_latest_eval_by_batch(self, batch_id: str) -> dict[str, Any] | None:
+        """Return the most recent eval result for a given batch."""
+        return self._eval_repo.get_latest_eval_by_batch(batch_id)
+
     def list_eval_runs(self, limit: int = 10) -> list[dict[str, Any]]:
         """Return recent eval runs."""
         return self._eval_repo.list_eval_runs(limit=limit)
+
+    def list_eval_runs_by_batch(self, batch_id: str, limit: int = 10) -> list[dict[str, Any]]:
+        """Return recent eval runs for a given batch."""
+        return self._eval_repo.list_eval_runs_by_batch(batch_id, limit=limit)

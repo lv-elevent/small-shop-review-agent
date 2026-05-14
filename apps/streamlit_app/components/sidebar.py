@@ -104,7 +104,7 @@ def render_sidebar() -> str:
                     width:7px; height:7px; background:#4CAF50;
                     border-radius:50%; display:inline-block;
                 "></span>
-                系统就绪 · Demo Mode
+                系统就绪
             </div>
         </div>
         """, unsafe_allow_html=True)

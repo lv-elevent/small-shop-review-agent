@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>上传评论页面 UI 参考稿 v2 - Compact</title>
+<style>
+:root{
+  --coffee-950:#1E1510;
+  --coffee-900:#2C221B;
+  --coffee-800:#3D2C20;
+  --coffee-700:#4A3728;
+  --coffee-600:#5C3D2E;
+  --coffee-500:#6B4C3B;
+  --coffee-400:#8B7355;
+  --coffee-300:#A09080;
+  --coffee-200:#D4C4B0;
+  --coffee-100:#E8E0D5;
+  --coffee-50:#F5F0E8;
+  --cream:#FFFCF8;
+  --bg:#FAFBF7;
+  --card:#FFFFFF;
+  --success:#27AE60;
+  --success-bg:#E8F8F0;
+  --warning:#E67E22;
+  --warning-bg:#FEF5E7;
+  --danger:#C0392B;
+  --danger-bg:#FDEDEC;
+  --info:#3498DB;
+  --info-bg:#EBF5FB;
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:var(--bg);color:var(--coffee-800);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",Arial,sans-serif;}
+.app{min-height:100vh;display:grid;grid-template-columns:238px 1fr}
+.sidebar{background:linear-gradient(180deg,#271D17 0%,#1B130F 100%);color:#fff;padding:34px 22px;display:flex;flex-direction:column}
+.brand{margin:46px 0 26px}
+.brand-title{font-size:19px;font-weight:800;color:#F4DFC2;letter-spacing:.2px;line-height:1.2}
+.brand-sub{color:#C8B294;font-size:11px;margin-top:7px}
+.nav{display:flex;flex-direction:column;gap:12px}
+.nav-item{border-radius:12px;padding:13px 16px;color:#F7EFE6;font-weight:800;background:transparent;border:1px solid transparent;font-size:15px}
+.nav-item.active{background:rgba(255,255,255,.12);border-color:#B99B76;box-shadow:inset 3px 0 0 #C9A879}
+.nav-sep{height:1px;background:rgba(255,255,255,.08);margin:26px 0 15px}
+.system{color:#B7E0A5;font-size:11px}
+.user-box{margin-top:auto;border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:12px 14px;color:#E9DDCC;display:flex;justify-content:space-between;font-size:13px}
+
+.main{padding:58px 54px 42px}
+.content{max-width:1420px;margin:0 auto}
+.topbar{position:absolute;top:16px;right:28px;display:flex;gap:12px;color:#3D2C20;font-size:12px;align-items:center}
+.header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:1px solid var(--coffee-100);padding-bottom:18px;margin-bottom:24px}
+.title-wrap{display:flex;gap:14px;align-items:center}
+.title-icon{width:40px;height:40px;border-radius:12px;background:var(--coffee-50);display:flex;align-items:center;justify-content:center;font-size:21px}
+h1{margin:0;font-size:28px;line-height:1.05;letter-spacing:-.3px}
+.subtitle{margin-top:9px;color:var(--coffee-400);font-size:14px}
+.badge{display:inline-flex;align-items:center;border-radius:8px;padding:7px 13px;background:#2F6B4F;color:white;font-size:12px;font-weight:800;white-space:nowrap}
+.grid{display:grid;grid-template-columns:minmax(0,7fr) minmax(330px,4fr);gap:22px;align-items:start}
+.card{background:var(--card);border:1px solid var(--coffee-100);border-radius:14px;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+.card.pad{padding:18px}
+.section-title{font-weight:900;color:var(--coffee-700);margin-bottom:14px;display:flex;align-items:center;gap:8px;font-size:15px}
+.config-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+.config-mini{background:#fff;border:1px solid var(--coffee-100);border-radius:12px;padding:14px;min-height:92px}
+.config-label{color:var(--coffee-700);font-size:13px;font-weight:900;margin-bottom:10px}
+.muted{color:var(--coffee-400);font-size:12px;line-height:1.55}
+.fake-input{height:38px;border:1px solid var(--coffee-100);border-radius:8px;background:#F7F8FA;padding:9px 12px;display:flex;justify-content:space-between;align-items:center;color:#3D2C20;font-size:14px}
+.toggle{width:40px;height:22px;border-radius:12px;background:#D8DDE3;position:relative}
+.toggle::after{content:"";position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:white;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.workflow{margin-top:16px;display:grid;grid-template-columns:minmax(0,7fr) 236px;gap:16px;align-items:start}
+.upload-card{border:2px dashed #D7C6B0;border-radius:14px;background:var(--cream);min-height:190px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:30px 18px;position:relative}
+.upload-card .section-title{position:absolute;left:18px;top:14px;margin:0}
+.cloud{width:58px;height:58px;border-radius:50%;border:1px solid var(--coffee-100);display:flex;align-items:center;justify-content:center;font-size:27px;color:var(--coffee-500);margin:8px 0 12px;background:white}
+.upload-title{font-weight:900;color:var(--coffee-700);font-size:15px}
+.upload-sub{color:var(--coffee-300);font-size:12px;margin:7px 0 16px}
+.btn-primary{height:41px;border:none;border-radius:11px;background:linear-gradient(135deg,var(--coffee-600),var(--coffee-800));color:white;padding:0 25px;font-weight:900;font-size:14px;cursor:pointer;box-shadow:0 2px 6px rgba(74,55,40,.16)}
+.file-chip{position:absolute;right:18px;bottom:16px;border:1px solid var(--coffee-100);border-radius:8px;padding:5px 10px;color:var(--coffee-300);background:#fff;font-size:12px}
+.action-col{display:flex;flex-direction:column;gap:12px}
+.run-help{padding:15px;background:var(--cream);border:1px solid var(--coffee-100);border-radius:12px;color:var(--coffee-500);font-size:12px;line-height:1.65}
+.validation{padding:14px}
+.validation-title{font-weight:900;color:var(--coffee-700);display:flex;gap:8px;align-items:center;margin-bottom:9px;font-size:14px}
+.v-row{display:grid;grid-template-columns:31px 1fr auto;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--coffee-50)}
+.v-row:last-child{border-bottom:none}
+.v-icon{width:27px;height:27px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px}
+.v-icon.neutral{background:#F2F5FA;color:#617086}.v-icon.success{background:var(--success-bg);color:var(--success)}.v-icon.warning{background:var(--warning-bg);color:var(--warning)}.v-icon.danger{background:var(--danger-bg);color:var(--danger)}
+.v-label{font-size:12px;color:var(--coffee-400);font-weight:800}.v-value{font-size:18px;font-weight:900;color:var(--coffee-700)}.v-value small{font-size:12px}
+.preview{margin-top:16px;padding:16px}
+.preview-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:11px}
+.table{width:100%;border-collapse:separate;border-spacing:0;overflow:hidden;border:1px solid var(--coffee-100);border-radius:10px;font-size:12px;background:white}
+.table th{background:var(--coffee-50);color:var(--coffee-700);padding:9px 9px;text-align:left;font-weight:900}
+.table td{padding:9px;border-top:1px solid var(--coffee-50);color:#4A3728;max-width:235px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hint{margin-top:10px;font-size:11px;color:var(--coffee-400)}
+.expander-mock{margin-top:10px;border:1px solid var(--coffee-100);border-radius:9px;padding:10px 13px;color:var(--coffee-700);font-size:12px;font-weight:800;background:#fff}
+.right-card{padding:18px}
+.tabs{display:grid;grid-template-columns:1fr 1fr 1fr;border-bottom:1px solid var(--coffee-100);margin:-4px 0 18px}
+.tab{text-align:center;padding:10px 8px 12px;font-weight:900;color:var(--coffee-400);border-bottom:2px solid transparent;font-size:14px}
+.tab.active{color:var(--coffee-800);border-bottom-color:var(--coffee-600)}
+.req-title{font-weight:900;color:var(--coffee-700);margin:12px 0 12px;font-size:15px}
+ul{margin:0 0 14px 18px;padding:0;color:#3D2C20;font-size:13px}li{margin:10px 0;line-height:1.45}
+code{color:#2B8A57;background:#F3FAF6;padding:2px 6px;border-radius:4px;font-size:12px}
+.btn-secondary{height:39px;width:100%;background:#fff;border:1px solid #BCA58A;color:var(--coffee-600);border-radius:9px;font-weight:900;margin:8px 0 16px}
+.sample-title{font-weight:900;margin-bottom:9px;color:var(--coffee-700);font-size:14px}
+.overview{margin-top:15px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.overview-card{border:1px solid var(--coffee-100);border-radius:12px;padding:15px 8px;text-align:center;background:#fff}
+.overview-card .num{margin-top:6px;font-size:22px;font-weight:900;color:var(--coffee-800)}
+.overview-card .lab{color:var(--coffee-400);font-size:12px}
+@media(max-width:1260px){
+  .app{grid-template-columns:218px 1fr}.main{padding:46px 34px}.grid{grid-template-columns:1fr}.workflow{grid-template-columns:1fr}.right-card{max-width:100%}
+}
+</style>
+<link rel="stylesheet" href="/Static/css/Global.css"/><link rel="stylesheet" href="/Web/css/Global.css"/><link rel="stylesheet" href="/Web/css/XYChatGPT.css"/></head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand"><div class="brand-title">☕ 小店点评经营助手</div><div class="brand-sub">Review Response & Insight Agent</div></div>
+    <div class="nav"><div class="nav-item active">📤 上传评论</div><div class="nav-item">📊 数据看板</div><div class="nav-item">💌 回复审核</div><div class="nav-item">🔍 追踪评测</div><div class="nav-item">⚙️ 设置</div></div>
+    <div class="nav-sep"></div><div class="system">● 系统就绪 · Demo Mode</div><div class="user-box"><span>👤 Demo User</span><span>⌄</span></div>
+  </aside>
+
+  <main class="main"><div class="content">
+    <div class="topbar"><span>☀️</span><span>帮助</span><span>Deploy</span><span>⋮</span></div>
+    <header class="header">
+      <div class="title-wrap"><div class="title-icon">📤</div><div><h1>上传评论数据</h1><div class="subtitle">上传顾客评论 CSV，系统将自动完成分类、情绪分析和回复草稿生成。</div></div></div>
+      <div class="badge">🏠 runtime: pipeline</div>
+    </header>
+
+    <section class="grid">
+      <div>
+        <div class="card pad">
+          <div class="section-title">⚙️ 数据配置</div>
+          <div class="config-row">
+            <div class="config-mini"><div class="config-label">🎭 演示模式</div><div class="toggle"></div><div class="muted" style="margin-top:9px;">使用内置演示数据，无需上传文件</div></div>
+            <div class="config-mini"><div class="config-label">🏪 门店类型</div><div class="fake-input"><span>咖啡店</span><span>⌄</span></div></div>
+            <div class="config-mini"><div class="config-label">🤖 LLM 模式</div><div class="fake-input"><span>live</span><span>⌄</span></div></div>
+          </div>
+        </div>
+
+        <div class="workflow">
+          <div>
+            <div class="upload-card">
+              <div class="section-title">📁 上传 CSV 文件</div>
+              <div class="cloud">☁️</div>
+              <div class="upload-title">拖拽 CSV 文件到此处，或点击选择文件</div>
+              <div class="upload-sub">支持 UTF-8 / GBK 编码，单文件最大 200MB</div>
+              <button class="btn-primary">⇧ 选择文件</button><div class="file-chip">.CSV</div>
+            </div>
+
+            <div class="card preview">
+              <div class="preview-head"><div class="section-title" style="margin:0;">📋 数据预览（前 5 条）</div><div class="muted">共 30 条评论</div></div>
+              <table class="table"><thead><tr><th>review_id</th><th>rating</th><th>review_text</th><th>date</th><th>platform</th></tr></thead>
+              <tbody>
+                <tr><td>COFF01</td><td>5</td><td>这家咖啡厅的环境太棒了，咖啡豆也很新鲜...</td><td>2026-04-20</td><td>美团</td></tr>
+                <tr><td>COFF02</td><td>4</td><td>午后包厢很可口，拿铁味道不错...</td><td>2026-04-21</td><td>美团</td></tr>
+                <tr><td>COFF03</td><td>3</td><td>中规中矩吧，没什么特别的...</td><td>2026-04-22</td><td>大众点评</td></tr>
+                <tr><td>COFF04</td><td>2</td><td>等了太久，而且没有人解释情况。</td><td>2026-04-23</td><td>大众点评</td></tr>
+                <tr><td>COFF05</td><td>5</td><td>服务态度很好，推荐焦糖玛奇朵...</td><td>2026-04-24</td><td>美团</td></tr>
+              </tbody></table>
+              <div class="hint">💡 预览展示前 5 条数据，仅供参考；将按全部数据进行分析。</div>
+              <div class="expander-mock">› 查看完整数据</div>
+            </div>
+          </div>
+
+          <div class="action-col">
+            <button class="btn-primary">🚀 开始分析</button>
+            <div class="run-help">💡 上传后将自动执行：<br/>数据清洗、分类、情绪分析、经营洞察、回复草稿与安全检查。</div>
+            <div class="card validation">
+              <div class="validation-title">🧩 数据校验结果</div>
+              <div class="v-row"><div class="v-icon neutral">📝</div><div class="v-label">总评论数</div><div class="v-value">30</div></div>
+              <div class="v-row"><div class="v-icon success">✅</div><div class="v-label">有效评论</div><div class="v-value">28 <small style="color:#27AE60">(93%)</small></div></div>
+              <div class="v-row"><div class="v-icon warning">⚠️</div><div class="v-label">需处理</div><div class="v-value" style="color:#E67E22">2 <small>(7%)</small></div></div>
+              <div class="v-row"><div class="v-icon danger">✕</div><div class="v-label">校验失败</div><div class="v-value">0</div></div>
+              <button class="btn-secondary">☰ 查看校验详情  ›</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <aside class="card right-card">
+        <div class="tabs"><div class="tab active">CSV 格式说明</div><div class="tab">示例数据</div><div class="tab">数据概况</div></div>
+        <div class="req-title">📋 CSV 格式要求</div>
+        <div style="font-weight:900;margin:12px 0 5px;">必填列：</div>
+        <ul><li><code>review_text</code> — 评论正文</li><li><code>rating</code> — 评分（1-5）</li><li><code>date / review_date</code> — 评论时间</li></ul>
+        <div style="font-weight:900;margin:15px 0 5px;">可选列：</div>
+        <ul><li><code>review_id</code> — 评论 ID</li><li><code>customer_name</code> — 顾客昵称</li><li><code>platform</code> — 来源平台</li><li><code>store_id / order_id</code> — 门店或订单标识</li></ul>
+        <div class="muted"><b>编码：</b>推荐 UTF-8；如出现乱码可尝试 GBK。</div>
+        <button class="btn-secondary">⬇ 下载示例 CSV</button>
+        <div class="sample-title">示例数据预览</div>
+        <table class="table"><thead><tr><th>review_id</th><th>rating</th><th>review_text</th><th>date</th><th>platform</th></tr></thead>
+          <tbody><tr><td>COFF01</td><td>5</td><td>这家咖啡厅的环境...</td><td>2026-04-20</td><td>美团</td></tr><tr><td>COFF02</td><td>4</td><td>午后包厢很可口...</td><td>2026-04-21</td><td>美团</td></tr><tr><td>COFF03</td><td>3</td><td>中规中矩吧...</td><td>2026-04-22</td><td>大众点评</td></tr><tr><td>COFF04</td><td>2</td><td>等了太久...</td><td>2026-04-23</td><td>大众点评</td></tr></tbody></table>
+        <div class="overview"><div class="overview-card"><div class="lab">总评论</div><div class="num">30</div></div><div class="overview-card"><div class="lab">平均评分</div><div class="num">2.4</div></div><div class="overview-card"><div class="lab">平台数</div><div class="num">2</div></div></div>
+      </aside>
+    </section>
+  </div></main>
+</div>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"7939e04a4baf43c8b86a560f74aac60e","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+<script src="/Static/js/jquery.js"></script><script src="/Static/js/Global.js"></script><script src="/Web/js/Global.js"></script><script src="/Web/js/XYChatGPT.js"></script></body>
+</html>

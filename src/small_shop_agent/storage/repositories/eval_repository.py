@@ -61,3 +61,19 @@ class EvalRepository:
                 "SELECT * FROM eval_results ORDER BY id DESC LIMIT ?", (limit,)
             ).fetchall()
             return [dict(r) for r in rows]
+
+    def list_eval_runs_by_batch(self, batch_id: str, limit: int = 20) -> list[dict]:
+        with get_session() as conn:
+            rows = conn.execute(
+                "SELECT * FROM eval_results WHERE batch_id = ? ORDER BY id DESC LIMIT ?",
+                (batch_id, limit),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_latest_eval_by_batch(self, batch_id: str) -> dict | None:
+        with get_session() as conn:
+            row = conn.execute(
+                "SELECT * FROM eval_results WHERE batch_id = ? ORDER BY id DESC LIMIT 1",
+                (batch_id,),
+            ).fetchone()
+            return dict(row) if row else None

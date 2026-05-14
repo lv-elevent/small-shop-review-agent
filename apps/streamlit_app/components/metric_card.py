@@ -1,9 +1,15 @@
 """
-Reusable metric card component — 完全复刻上传页示例图样式
+Reusable metric card component — legacy wrapper.
+
+Delegates to ``ui_components.render_metric_card()`` for rendering.
+Kept for backward compatibility with existing page imports.
 """
 
 from __future__ import annotations
 import streamlit as st
+
+from apps.streamlit_app.components.ui_components import render_metric_card
+
 
 def metric_card(
     label: str,
@@ -13,32 +19,16 @@ def metric_card(
     bg_color: str = "#FFF8F5",
     warn: bool = False,
 ) -> None:
-    """Render a single metric card styled to match the mockup."""
-    border = "#F0D0C0" if warn else "#E8E0D5"
-    bg = "#FFF3EB" if warn else bg_color
+    """Render a metric card (legacy wrapper).
 
-    html = f"""
-    <div style="
-        background: {bg};
-        border: 1px solid {border};
-        border-radius: 14px;
-        padding: 18px 16px;
-        text-align: center;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-    ">
-        <div style="
-            font-size: 0.78rem;
-            color: #8B7355;
-            font-weight: 500;
-            margin-bottom: 6px;
-            letter-spacing: 0.3px;
-        ">{icon}  {label}</div>
-        <div style="
-            font-size: 1.85rem;
-            font-weight: 700;
-            color: {color};
-            line-height: 1.2;
-        ">{value}</div>
-    </div>
+    Delegates to ``render_metric_card()``.
     """
-    st.markdown(html, unsafe_allow_html=True)
+    status = "warning" if warn else "neutral"
+    render_metric_card(
+        label=label,
+        value=value,
+        icon=icon,
+        status=status,
+        color=color,
+        bg_color=bg_color,
+    )
