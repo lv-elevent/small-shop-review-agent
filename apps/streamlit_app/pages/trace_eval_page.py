@@ -1008,55 +1008,43 @@ def _render_run_metrics(batch_id: str, unsafe: int, schema_fail: int) -> None:
 
 
 def _render_eval_records(eval_runs: list[dict]) -> None:
-    rows = []
-    for run in eval_runs[:5]:
+    """Render eval run history as a Streamlit dataframe with Chinese headers."""
+    import pandas as pd
+
+    if not eval_runs:
+        with st.container(border=True):
+            st.markdown("**检查记录**")
+            st.caption("最近几次质量检查结果。")
+            st.info("暂无质量检查记录。点击下方按钮可以重新检查质量。")
+        return
+
+    table_rows = []
+    for run in eval_runs[:10]:
         ta = run.get("topic_accuracy", 0) or 0
         sa = run.get("sentiment_accuracy", 0) or 0
         score = round((ta + sa) / 2, 2)
         status = "通过" if score >= 0.7 else "需复查"
-        fg, bg = ("#27AE60", "#E8F8F0") if score >= 0.7 else ("#E67E22", "#FEF5E7")
         time_str = run.get("created_at", "") or "—"
         if "T" in time_str:
             time_str = time_str.replace("T", " ")[:19]
-        rows.append(
-            f"""
-            <div class="record-row">
-                <div><span class="record-dot" style="background:{fg};"></span>{safe_html(time_str)}</div>
-                <div>{safe_html(str(run.get('total_eval_cases', 0) or 0))}</div>
-                <div>{_pct(ta)} / {_pct(sa)}</div>
-                <div>{int(score * 100)}/100</div>
-                <div><span class="status-badge" style="color:{fg};background:{bg};">{safe_html(status)}</span></div>
-            </div>
-            """
+        table_rows.append({
+            "时间": time_str,
+            "样例数": run.get("total_eval_cases", 0) or 0,
+            "问题分类": _pct(ta),
+            "好差评判断": _pct(sa),
+            "整体质量": f"{int(score * 100)}/100",
+            "状态": status,
+        })
+
+    df = pd.DataFrame(table_rows)
+    with st.container(border=True):
+        st.markdown(
+            f'<span style="font-weight:700;color:#4A3728;font-size:0.95rem;">检查记录</span>'
+            f'<span style="font-size:0.74rem;color:#A09080;margin-left:10px;">'
+            f'最近几次质量检查结果 · 共 {len(eval_runs)} 条</span>',
+            unsafe_allow_html=True,
         )
-
-    if not rows:
-        body = '<div class="owner-empty" style="margin:0;">暂无质量检查记录。点击下方按钮可以重新检查质量。</div>'
-    else:
-        body = f"""
-        <div class="records-table">
-            <div class="record-head">
-                <div>时间</div><div>样例数</div><div>分类 / 好差评</div><div>整体质量</div><div>状态</div>
-            </div>
-            {''.join(rows)}
-        </div>
-        """
-
-    st.markdown(
-        f"""
-        <div class="section-card">
-            <div class="section-head">
-                <div>
-                    <p class="section-title">检查记录</p>
-                    <div class="section-subtitle">最近几次质量检查结果。</div>
-                </div>
-                <div class="done-pill">共 {len(eval_runs)} 条</div>
-            </div>
-            {body}
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+        st.dataframe(df, use_container_width=True, hide_index=True)
 
 
 def _trace_text(traces: list[dict]) -> str:

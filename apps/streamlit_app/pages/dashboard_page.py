@@ -852,38 +852,25 @@ def _render_issue_card(issue: dict) -> None:
 
 
 def _render_issue_chart(issues: list[dict]) -> None:
-    """Render a simple CSS bar chart for issue mention counts."""
+    """Render issue mention counts as a leaderboard with progress bars."""
     if not issues:
         return
 
     max_count = max([int(i.get("mention_count", 0) or 0) for i in issues] + [1])
-    rows = []
-    for issue in issues[:5]:
-        name = _truncate(_cn_topic(issue.get("issue_name", "问题")), 8)
-        count = int(issue.get("mention_count", 0) or 0)
-        width = max(8, int(count / max_count * 100))
-        rows.append(
-            f"""
-            <div class="bar-row">
-                <div class="bar-label">{safe_html(name)}</div>
-                <div class="bar-track"><div class="bar-fill" style="width:{width}%;"></div></div>
-                <div class="bar-value">{count}</div>
-            </div>
-            """
-        )
-
-    st.markdown(
-        f"""
-        <div class="chart-card">
-            <div class="section-title" style="margin-bottom:10px;">问题提及次数</div>
-            {''.join(rows)}
-            <div class="quote-box" style="margin-bottom:0;">
-                💡 排名靠前的问题，建议优先安排门店负责人跟进。
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    with st.container(border=True):
+        st.markdown("**问题提及次数**")
+        for issue in issues[:5]:
+            name = _truncate(_cn_topic(issue.get("issue_name", "问题")), 8)
+            count = int(issue.get("mention_count", 0) or 0)
+            c1, c2, c3 = st.columns([3, 1, 1], gap="small")
+            with c1:
+                st.caption(name)
+                st.progress(count / max_count)
+            with c2:
+                st.markdown(f"**{count}**")
+            with c3:
+                pass
+        st.caption("💡 排名靠前的问题，建议优先安排门店负责人跟进。")
 
 
 def _render_top_issues(data: dict) -> None:
@@ -974,38 +961,22 @@ def _render_process_status(traces: list[dict], pending_count: int) -> None:
     done = sum(1 for r in rows if r["status"] == "passed")
     pass_rate = int(done / max(len(rows), 1) * 100)
 
-    html_rows = []
-    for row in rows:
-        fg, bg, badge = _status_style(row["status"])
-        icon = "✓" if row["status"] == "passed" else "!" if row["status"] == "failed" else "…"
-        html_rows.append(
-            f"""
-            <div class="progress-row">
-                <div class="progress-icon" style="background:{bg};color:{fg};">{icon}</div>
-                <div>
-                    <div class="progress-name">{safe_html(row['name'])}</div>
-                    <div class="progress-detail">{safe_html(_truncate(row['detail'], 60))}</div>
-                </div>
-                <div class="progress-badge" style="background:{bg};color:{fg};">{safe_html(badge)}</div>
-            </div>
-            """
-        )
-
-    st.markdown(
-        f"""
-        <div class="section-card">
-            <div class="section-head">
-                <div>
-                    <p class="section-title">🛡️ 处理进度</p>
-                    <div class="section-subtitle">从上传到生成回复的关键步骤。</div>
-                </div>
-                <div class="section-pill">完成 {pass_rate}%</div>
-            </div>
-            <div class="progress-list">{''.join(html_rows)}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    with st.container(border=True):
+        st.markdown(f"**🛡️ 处理进度**  ·  完成 {pass_rate}%")
+        st.caption("从上传到生成回复的关键步骤。")
+        for row in rows:
+            fg, bg, badge = _status_style(row["status"])
+            c1, c2, c3 = st.columns([4, 6, 3], gap="small")
+            with c1:
+                st.markdown(f"**{safe_html(row['name'])}**")
+            with c2:
+                st.caption(safe_html(row['detail']))
+            with c3:
+                st.markdown(
+                    f'<span style="color:{fg};background:{bg};padding:2px 10px;'
+                    f'border-radius:10px;font-size:0.72rem;font-weight:600;">{safe_html(badge)}</span>',
+                    unsafe_allow_html=True,
+                )
 
 
 def _render_reply_queue(drafts: list[dict], page: int, page_size: int = 4) -> None:

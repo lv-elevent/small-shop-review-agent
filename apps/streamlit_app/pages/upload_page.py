@@ -961,26 +961,27 @@ def _render_service_validation_results(stats: dict) -> None:
 
 
 def _render_data_overview(df: pd.DataFrame) -> None:
-    """Render data overview. Uses one safe HTML block to avoid leaked raw HTML fragments."""
+    """Render data overview using Streamlit native containers."""
     stats = _compute_preview_stats(df)
     items = [
-        ("总评论", stats["total_rows"], ""),
-        ("平均评分", stats["avg_rating"], ""),
-        ("低分评论", stats["low_rating_count"], ""),
-        ("来源平台", stats["platform_count"], ""),
-        ("最早评论", stats["earliest_date"], "overview-date"),
-        ("低分占比", stats["low_rating_rate"], ""),
+        ("总评论", str(stats["total_rows"])),
+        ("平均评分", str(stats["avg_rating"])),
+        ("低分评论", str(stats["low_rating_count"])),
+        ("来源平台", str(stats["platform_count"])),
+        ("最早评论", str(stats["earliest_date"])),
+        ("低分占比", str(stats["low_rating_rate"])),
     ]
-    cards = "".join(
-        f"""
-        <div class="overview-card">
-            <div class="overview-label">{label}</div>
-            <div class="overview-value {extra_class}">{value}</div>
-        </div>
-        """
-        for label, value, extra_class in items
-    )
-    st.markdown(f'<div class="overview-grid">{cards}</div>', unsafe_allow_html=True)
+    for row_start in range(0, len(items), 3):
+        cols = st.columns(3, gap="small")
+        for i, col in enumerate(cols):
+            idx = row_start + i
+            if idx >= len(items):
+                break
+            label, value = items[idx]
+            with col:
+                with st.container(border=True):
+                    st.caption(label)
+                    st.markdown(f"**{value}**")
 
 
 def _render_data_preview(uploaded_df: pd.DataFrame | None) -> None:

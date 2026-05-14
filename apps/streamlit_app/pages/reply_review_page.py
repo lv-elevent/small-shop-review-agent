@@ -871,28 +871,30 @@ def _render_publish_checks(safety_status: str, risk_types: list) -> None:
         ("符合平台规范", "适合在平台展示", platform_result),
     ]
 
-    cards = []
-    for name, desc, result in checks:
-        c, b, l = result
-        cards.append(
-            f"""
-            <div class="check-card">
-                <div class="check-top">
-                    <div class="check-name">{safe_html(name)}</div>
-                    <div class="check-pill" style="color:{c};background:{b};">{safe_html(l)}</div>
-                </div>
-                <div class="check-desc">{safe_html(desc)}</div>
-            </div>
-            """
-        )
-
     st.markdown(
-        f"""
-        <div class="label-line">🛡️ 发布前检查 <span class="safety-badge" style="color:{fg};background:{bg};margin-left:auto;">{safe_html(label)}</span></div>
-        <div class="check-grid">{''.join(cards)}</div>
-        """,
+        f'**🛡️ 发布前检查** '
+        f'<span style="color:{fg};background:{bg};padding:2px 10px;border-radius:10px;'
+        f'font-size:0.72rem;font-weight:600;margin-left:8px;">{safe_html(label)}</span>',
         unsafe_allow_html=True,
     )
+
+    for row_start in range(0, len(checks), 2):
+        cols = st.columns(2, gap="small")
+        for i, col in enumerate(cols):
+            idx = row_start + i
+            if idx >= len(checks):
+                break
+            name, desc, result = checks[idx]
+            c, b, l = result
+            with col:
+                with st.container(border=True):
+                    st.markdown(
+                        f'**{safe_html(name)}**'
+                        f' <span style="color:{c};background:{b};padding:1px 8px;'
+                        f'border-radius:8px;font-size:0.68rem;font-weight:600;">{safe_html(l)}</span>',
+                        unsafe_allow_html=True,
+                    )
+                    st.caption(desc)
 
     if risk_types:
         risk_text = "、".join(str(x) for x in risk_types if str(x).strip())
