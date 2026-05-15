@@ -48,3 +48,7 @@ Thumbs.db
 dist/
 build/
 *.egg-info/
+
+# Temp directories
+temp/
+agents/

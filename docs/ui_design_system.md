@@ -1,6 +1,6 @@
-# 小店评论经营助手 —— Streamlit UI 设计规范
+## 小店评论经营助手 — Streamlit UI 设计规范
 
-> 基于目标示例图提炼，确保四页视觉一致性
+> 基于设计稿提炼，确保四页视觉一致性
 
 ---
 
@@ -682,7 +682,7 @@ st.markdown("""
 │                    │                                    │
 │  📋 数据配置        │  [CSV格式说明 | 示例数据 | 数据概况] │
 │  ┌──────────────┐  │                                    │
-│  │ 演示模式开关  │  │  ─────────────────────────────     │
+│  │ 内置数据开关  │  │  ─────────────────────────────     │
 │  │ 门店类型下拉  │  │  CSV格式要求                        │
 │  │ LLM模式下拉   │  │  · 必填字段...                      │
 │  └──────────────┘  │                                    │
@@ -712,7 +712,7 @@ with left:
     # 数据配置卡片
     with st.container():
         st.markdown("#### 📋 数据配置")
-        demo_mode = st.toggle("演示模式")
+        builtin_mode = st.toggle("内置数据")
         store_type = st.selectbox("门店类型", STORE_TYPES)
         llm_mode = st.selectbox("LLM模式", ["demo", "live"])
     
