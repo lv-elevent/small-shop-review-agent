@@ -35,11 +35,10 @@ st.set_page_config(
 
 from apps.streamlit_app.components.sidebar import render_sidebar
 
-# Hide Streamlit's default sidebar nav on home page too
+# Sidebar renders with unified dark coffee theme from render_sidebar()
 st.markdown("""
 <style>
-    .stApp { background-color: #FAFAF7; }
-    div[data-testid="stSidebarNav"] { display: none !important; }
+    .stApp { background-color: #FAFBF7; }
 </style>
 """, unsafe_allow_html=True)
 

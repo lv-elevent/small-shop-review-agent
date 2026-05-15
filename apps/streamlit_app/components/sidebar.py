@@ -21,7 +21,9 @@ def render_sidebar() -> str:
         div[data-testid="stSidebarNav"] { display: none !important; }
 
         section[data-testid="stSidebar"] {
-            background: #2C221B;
+            min-width: 256px !important;
+            max-width: 256px !important;
+            background: linear-gradient(180deg,#271D17 0%,#1B130F 100%);
         }
         section[data-testid="stSidebar"] .stMarkdown,
         section[data-testid="stSidebar"] .stMarkdown * {

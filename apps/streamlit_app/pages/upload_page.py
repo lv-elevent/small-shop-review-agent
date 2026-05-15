@@ -31,8 +31,8 @@ from apps.streamlit_app.components import (
     render_small_table,
     render_two_column_layout,
     render_card_container,
-    render_sidebar,
 )
+from apps.streamlit_app.components.sidebar import render_sidebar
 from small_shop_agent.services.review_service import ReviewService
 from small_shop_agent.services.workflow_service import WorkflowService
 from small_shop_agent.storage.database import execute_migrations
@@ -117,12 +117,6 @@ def _inject_upload_page_styles() -> None:
                 display: none !important;
             }
 
-            section[data-testid="stSidebar"] {
-                min-width: 238px !important;
-                max-width: 238px !important;
-                background: linear-gradient(180deg,#271D17 0%,#1B130F 100%) !important;
-            }
-
             .stMain .block-container {
                 padding-top: 1.35rem !important;
                 padding-bottom: 2rem !important;
@@ -152,23 +146,23 @@ def _inject_upload_page_styles() -> None:
                 color: var(--coffee-400);
             }
 
-            .stButton > button,
-            .stDownloadButton > button {
+            .stMain .stButton > button,
+            .stMain .stDownloadButton > button {
                 border-radius: 11px !important;
                 font-weight: 900 !important;
                 min-height: 41px !important;
             }
 
-            .stButton > button[kind="primary"],
-            .stButton > button[data-testid="baseButton-primary"] {
+            .stMain .stButton > button[kind="primary"],
+            .stMain .stButton > button[data-testid="baseButton-primary"] {
                 background: linear-gradient(135deg,var(--coffee-600),var(--coffee-800)) !important;
                 border: 0 !important;
                 box-shadow: 0 2px 8px rgba(74,55,40,.17) !important;
             }
 
-            .stDownloadButton > button,
-            .stButton > button[kind="secondary"],
-            .stButton > button[data-testid="baseButton-secondary"] {
+            .stMain .stDownloadButton > button,
+            .stMain .stButton > button[kind="secondary"],
+            .stMain .stButton > button[data-testid="baseButton-secondary"] {
                 border: 1px solid #BCA58A !important;
                 color: var(--coffee-600) !important;
                 background: #fff !important;
@@ -181,17 +175,17 @@ def _inject_upload_page_styles() -> None:
                 background: #F7F8FA !important;
             }
 
-            section[data-testid="stFileUploader"] {
+            .stMain section[data-testid="stFileUploader"] {
                 padding: 0 !important;
                 border: none !important;
                 background: transparent !important;
             }
 
-            section[data-testid="stFileUploader"] label {
+            .stMain section[data-testid="stFileUploader"] label {
                 display: none !important;
             }
 
-            section[data-testid="stFileUploader"] div[data-testid="stFileUploaderDropzone"] {
+            .stMain section[data-testid="stFileUploader"] div[data-testid="stFileUploaderDropzone"] {
                 border: 2px dashed #D7C6B0 !important;
                 border-radius: 14px !important;
                 background: linear-gradient(180deg, #FFFCF8 0%, #FFF9F2 100%) !important;
@@ -202,13 +196,13 @@ def _inject_upload_page_styles() -> None:
                 transition: all .22s ease !important;
             }
 
-            section[data-testid="stFileUploader"] div[data-testid="stFileUploaderDropzone"]:hover {
+            .stMain section[data-testid="stFileUploader"] div[data-testid="stFileUploaderDropzone"]:hover {
                 border-color: #9E7658 !important;
                 box-shadow: 0 10px 24px rgba(107,76,59,.08) !important;
                 transform: translateY(-1px);
             }
 
-            section[data-testid="stFileUploader"] button {
+            .stMain section[data-testid="stFileUploader"] button {
                 border-radius: 11px !important;
                 background: linear-gradient(135deg,var(--coffee-600),var(--coffee-800)) !important;
                 color: #fff !important;
@@ -219,19 +213,19 @@ def _inject_upload_page_styles() -> None:
                 box-shadow: 0 2px 8px rgba(74,55,40,.17) !important;
             }
 
-            section[data-testid="stFileUploader"] small,
-            section[data-testid="stFileUploader"] [data-testid="stFileUploaderDropzoneInstructions"] {
+            .stMain section[data-testid="stFileUploader"] small,
+            .stMain section[data-testid="stFileUploader"] [data-testid="stFileUploaderDropzoneInstructions"] {
                 color: var(--coffee-300) !important;
                 font-size: .74rem !important;
             }
 
-            section[data-testid="stFileUploader"] [data-testid="stFileUploaderFile"] {
+            .stMain section[data-testid="stFileUploader"] [data-testid="stFileUploaderFile"] {
                 border-radius: 12px !important;
                 border: 1px solid var(--coffee-100) !important;
                 background: #F7F8FA !important;
             }
 
-            section[data-testid="stFileUploader"] [data-testid="stFileUploaderFileName"] {
+            .stMain section[data-testid="stFileUploader"] [data-testid="stFileUploaderFileName"] {
                 color: var(--coffee-700) !important;
                 font-weight: 850 !important;
             }

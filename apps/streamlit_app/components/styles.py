@@ -145,9 +145,9 @@ GLOBAL_STYLES = """
     }
 
     /* ═══════════════════════════════════════════════════════════════
-       Buttons
+       Buttons (scoped to .stMain to avoid polluting sidebar)
        ═══════════════════════════════════════════════════════════════ */
-    div[data-testid="stButton"] > button[kind="primary"] {
+    .stMain div[data-testid="stButton"] > button[kind="primary"] {
         background: linear-gradient(135deg, #6B4C3B 0%, #5C3D2E 100%) !important;
         border: none !important;
         border-radius: 10px !important;
@@ -157,13 +157,13 @@ GLOBAL_STYLES = """
         transition: all 0.2s ease !important;
     }
 
-    div[data-testid="stButton"] > button[kind="primary"]:hover {
+    .stMain div[data-testid="stButton"] > button[kind="primary"]:hover {
         background: linear-gradient(135deg, #7D5A47 0%, #6B4C3B 100%) !important;
         box-shadow: 0 3px 10px rgba(74,55,40,0.25) !important;
         transform: translateY(-1px) !important;
     }
 
-    div[data-testid="stButton"] > button[kind="secondary"] {
+    .stMain div[data-testid="stButton"] > button[kind="secondary"] {
         background: #FFFFFF !important;
         border: 1px solid #6B4C3B !important;
         border-radius: 10px !important;
@@ -172,7 +172,7 @@ GLOBAL_STYLES = """
         transition: all 0.2s ease !important;
     }
 
-    div[data-testid="stButton"] > button[kind="secondary"]:hover {
+    .stMain div[data-testid="stButton"] > button[kind="secondary"]:hover {
         background: #F5F0E8 !important;
         box-shadow: 0 2px 6px rgba(0,0,0,0.06) !important;
     }
@@ -351,18 +351,6 @@ GLOBAL_STYLES = """
         border-radius: 10px !important;
     }
 
-    /* ═══════════════════════════════════════════════════════════════
-       Sidebar (additional overrides)
-       ═══════════════════════════════════════════════════════════════ */
-    section[data-testid="stSidebar"] {
-        background: #2C221B !important;
-    }
-
-    section[data-testid="stSidebar"] button[kind="primary"] {
-        background: rgba(255,255,255,0.1) !important;
-        border-left: 3px solid #C8A882 !important;
-        color: #FFFFFF !important;
-    }
 </style>
 """
 

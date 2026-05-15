@@ -84,12 +84,6 @@ st.markdown(
             height: 0 !important;
         }
 
-        section[data-testid="stSidebar"] {
-            min-width: 238px !important;
-            max-width: 238px !important;
-            background: linear-gradient(180deg,#271D17 0%,#1B130F 100%) !important;
-        }
-
         .stMain .block-container {
             padding-top: 1.35rem !important;
             padding-bottom: 2rem !important;
