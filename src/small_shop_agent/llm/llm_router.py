@@ -33,12 +33,13 @@ def _resolve_mode(mode: str | None) -> str:
     return os.environ.get("LLM_MODE", "demo").lower().strip()
 
 
-def get_llm_provider(mode: str | None = None) -> BaseLLMProvider:
+def get_llm_provider(mode: str | None = None, model_name: str | None = None) -> BaseLLMProvider:
     """Return a BaseLLMProvider instance based on mode.
 
     Args:
         mode: One of "demo", "mock", "live", "openai".
               If None, reads LLM_MODE env var; defaults to "demo".
+        model_name: Optional model override for multi-agent scenarios.
 
     Returns:
         A BaseLLMProvider instance.
@@ -79,7 +80,7 @@ def get_llm_provider(mode: str | None = None) -> BaseLLMProvider:
                 "Ensure openai_provider.py is implemented and the openai package is installed."
             ) from exc
 
-        return OpenAIProvider(api_key=api_key)
+        return OpenAIProvider(api_key=api_key, model=model_name or os.environ.get("OPENAI_MODEL"))
 
     # ── Unknown ──
     raise ValueError(

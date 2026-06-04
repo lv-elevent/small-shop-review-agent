@@ -31,15 +31,15 @@ class AgentOrchestrator:
 
         # Phase 1: Review (analysis + insights + evidence)
         state["current_step"] = "review_agent"
-        state = self._review.run(state, **deps)
+        state = self._review.run(state, provider=deps.pop('review_provider', deps.get('provider')), **deps)
 
         # Phase 2: Reply (draft generation)
         state["current_step"] = "reply_agent"
-        state = self._reply.run(state, **deps)
+        state = self._reply.run(state, provider=deps.pop('reply_provider', deps.get('provider')), **deps)
 
         # Phase 3: Safety (dual-engine guard)
         state["current_step"] = "safety_agent"
-        state = self._safety.run(state, **deps)
+        state = self._safety.run(state, provider=deps.pop('safety_provider', deps.get('provider')), **deps)
 
         # Terminal: approval
         state["current_step"] = "human_approval"

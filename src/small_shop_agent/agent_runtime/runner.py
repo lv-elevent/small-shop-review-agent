@@ -50,15 +50,21 @@ def run_with_agent_runtime(
     review_dicts: list[dict[str, Any]] = [dict(r) for r in reviews]
 
     # ── Provider ──────────────────────────────────────────────────────
+    from small_shop_agent.core.config import REVIEW_MODEL, REPLY_MODEL, SAFETY_MODEL
+
     if mode in ("demo", "mock"):
-        provider = MockProvider(DemoLoader())
+        review_provider = MockProvider(DemoLoader())
+        reply_provider = MockProvider(DemoLoader())
+        safety_provider = MockProvider(DemoLoader())
         model_name = "demo"
     else:
         try:
             from small_shop_agent.llm.llm_router import get_llm_provider
-            provider = get_llm_provider(mode)
-            model_name = getattr(provider, "_model", mode)
-            provider._batch_id = batch_id  # type: ignore[attr-defined]
+            review_provider = get_llm_provider(mode, model_name=REVIEW_MODEL)
+            reply_provider = get_llm_provider(mode, model_name=REPLY_MODEL)
+            safety_provider = get_llm_provider(mode, model_name=SAFETY_MODEL)
+            model_name = REVIEW_MODEL
+            review_provider._batch_id = batch_id  # type: ignore[attr-defined]
         except Exception as exc:
             state = create_initial_state(
                 batch_id=batch_id, mode=mode,
@@ -86,7 +92,9 @@ def run_with_agent_runtime(
         orchestrator = AgentOrchestrator()
     final_state = orchestrator.run(
         state=state,
-        provider=provider,
+        review_provider=review_provider,
+        reply_provider=reply_provider,
+        safety_provider=safety_provider,
         trace_repo=trace_repo,
         analysis_repo=analysis_repo,
         insight_repo=insight_repo,

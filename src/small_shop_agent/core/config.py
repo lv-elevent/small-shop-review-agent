@@ -27,6 +27,12 @@ CSV_MAX_SIZE_MB: int = 10
 # ── Demo ────────────────────────────────────────────────────────
 DEMO_MODE_DEFAULT: bool = True
 DEMO_STORE_TYPE: str = "coffee_shop"
+# Multi-agent model differentiation
+# Each agent can use a different model via env vars. Falls back to OPENAI_MODEL.
+REVIEW_MODEL = __import__("os").environ.get("REVIEW_MODEL", __import__("os").environ.get("OPENAI_MODEL", "qwen3.6-flash"))
+REPLY_MODEL = __import__("os").environ.get("REPLY_MODEL", __import__("os").environ.get("OPENAI_MODEL", "qwen3.7-max"))
+SAFETY_MODEL = __import__("os").environ.get("SAFETY_MODEL", __import__("os").environ.get("OPENAI_MODEL", "qwen3.6-flash"))
+
 
 # Weight of vector cosine-similarity score in hybrid ranking (0.0 to 1.0)
 HYBRID_VECTOR_WEIGHT: float = 0.7
