@@ -24,7 +24,6 @@ from small_shop_agent.services.workflow_service import WorkflowService
 from small_shop_agent.services.eval_service import EvalService
 from small_shop_agent.harness.input.csv_validator import validate_and_clean
 from small_shop_agent.agent_runtime.runner import run_with_agent_runtime
-from small_shop_agent.core.config import WORKFLOW_RUNTIME
 
 app = FastAPI(title="Small Shop Review Agent API", version="0.3.0")
 
@@ -86,11 +85,7 @@ def analyze_batch(batch_id: str) -> dict[str, Any]:
     """Run the full Agent workflow against batch_id, then auto-eval."""
     mode = "live"
 
-    if WORKFLOW_RUNTIME == "agent_graph":
-        state = run_with_agent_runtime(batch_id, mode=mode)
-    else:
-        wf = WorkflowService()
-        state = wf.run_analysis(batch_id, mode=mode)
+    state = run_with_agent_runtime(batch_id, mode=mode)
 
     if state.get("errors"):
         return {

@@ -1151,9 +1151,9 @@ def main() -> None:
     rs = ReviewService()
     ws = WorkflowService()
 
-    from small_shop_agent.core.config import WORKFLOW_RUNTIME
+    # multi_agent is the only runtime now
 
-    workflow_runtime = WORKFLOW_RUNTIME
+    workflow_runtime = "multi_agent"
     # 生产页面不暴露模型/运行模式给老板；如需切换，请通过环境变量控制。
     llm_mode = os.environ.get("LLM_MODE", "live")
 

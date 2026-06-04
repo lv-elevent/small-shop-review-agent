@@ -28,16 +28,6 @@ CSV_MAX_SIZE_MB: int = 10
 DEMO_MODE_DEFAULT: bool = True
 DEMO_STORE_TYPE: str = "coffee_shop"
 
-# ── Runtime ─────────────────────────────────────────────────────
-# "pipeline" = old WorkflowService, "agent_graph" = new agent_runtime
-_WORKFLOW_RUNTIME_ENV = __import__("os").environ.get("WORKFLOW_RUNTIME", "agent_graph")
-WORKFLOW_RUNTIME: str = _WORKFLOW_RUNTIME_ENV if _WORKFLOW_RUNTIME_ENV in ("pipeline", "agent_graph", "multi_agent") else "pipeline"
-
-# ── Async ────────────────────────────────────────────────────────
-_ASYNC_ENV = __import__("os").environ.get("AGENT_ASYNC_ENABLED", "true")
-AGENT_ASYNC_ENABLED: bool = _ASYNC_ENV.lower() in ("true", "1", "yes")
-AGENT_ASYNC_TIMEOUT_SECONDS: int = 30
-# Hybrid Retrieval (Memory RAG)
 # Weight of vector cosine-similarity score in hybrid ranking (0.0 to 1.0)
 HYBRID_VECTOR_WEIGHT: float = 0.7
 # Weight of keyword-match score in hybrid ranking (0.0 to 1.0)

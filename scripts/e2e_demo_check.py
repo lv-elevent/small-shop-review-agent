@@ -39,7 +39,7 @@ if _MODE not in ("mock", "openai", "ollama"):
 # ── Temp DB isolation ────────────────────────────────────────────────
 _E2E_DB = _PROJECT_ROOT / "data" / "e2e_test.db"
 import small_shop_agent.core.config as _cfg
-_cfg.WORKFLOW_RUNTIME = _RUNTIME
+# multi_agent is the only runtime now
 _cfg.DB_PATH = _E2E_DB  # isolate from production DB
 
 from loguru import logger

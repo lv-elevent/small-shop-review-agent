@@ -81,39 +81,17 @@ def run_with_agent_runtime(
     batch_repo.update_status(batch_id, "analyzing")
 
     # ── Run graph ─────────────────────────────────────────────────────
-    from small_shop_agent.core.config import AGENT_ASYNC_ENABLED, WORKFLOW_RUNTIME
+    # multi_agent is the only runtime now
 
-    if AGENT_ASYNC_ENABLED:
-        import asyncio
-        runner_fn = run_agent_graph_async
-        final_state = asyncio.run(runner_fn(
-            state=state,
-            provider=provider,
-            trace_repo=trace_repo,
-            analysis_repo=analysis_repo,
-            insight_repo=insight_repo,
-            reply_repo=reply_repo,
-        ))
-    elif WORKFLOW_RUNTIME == "multi_agent":
         orchestrator = AgentOrchestrator()
-        final_state = orchestrator.run(
-            state=state,
-            provider=provider,
-            trace_repo=trace_repo,
-            analysis_repo=analysis_repo,
-            insight_repo=insight_repo,
-            reply_repo=reply_repo,
-        )
-    else:
-        final_state = run_agent_graph(
-            state=state,
-            provider=provider,
-            trace_repo=trace_repo,
-            analysis_repo=analysis_repo,
-            insight_repo=insight_repo,
-            reply_repo=reply_repo,
-        )
-
+    final_state = orchestrator.run(
+        state=state,
+        provider=provider,
+        trace_repo=trace_repo,
+        analysis_repo=analysis_repo,
+        insight_repo=insight_repo,
+        reply_repo=reply_repo,
+    )
     # ── Finalize batch status ─────────────────────────────────────────
     error_count = len(final_state["errors"])
     batch_repo.update_status(
