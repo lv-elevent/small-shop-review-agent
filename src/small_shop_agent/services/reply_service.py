@@ -209,16 +209,29 @@ class ReplyService:
             }
             if metadata_extra:
                 meta.update(metadata_extra)
+            embedding = self._embed_content(content)
             self._memory_repo.insert_memory(
                 store_type=_MEMO_STORE,
                 memory_type=memory_type,
                 content=content,
                 metadata=meta,
                 source_id=source.get("source_id", ""),
+                embedding=embedding,
             )
         except Exception as exc:
             logger.warning(f"写入记忆失败：{exc}")
 
+    @staticmethod
+    def _embed_content(content: str):
+        """Generate embedding vector for content. Returns None when unavailable."""
+        try:
+            from small_shop_agent.embeddings.embedder import get_embedder
+            embedder = get_embedder()
+            if embedder.available:
+                return embedder.embed_single(content)
+        except Exception:
+            pass
+        return None
 
     # ── Export ──────────────────────────────────────────────────────────────
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from typing import Any
 
 from small_shop_agent.storage.sqlite_session import get_session
 
@@ -51,17 +52,19 @@ class MemoryRepository:
         content: str = "",
         metadata: dict | None = None,
         source_id: str = "",
+        embedding: list[float] | None = None,
     ) -> dict:
         """Insert an agent memory entry. Generates memory_id if empty."""
         mid = memory_id or f"mem-{uuid.uuid4().hex[:12]}"
         meta_json = json.dumps(metadata or {}, ensure_ascii=False)
+        emb_json = json.dumps(embedding) if embedding is not None else None
         with get_session() as conn:
             conn.execute(
                 """INSERT OR REPLACE INTO agent_memories
-                   (memory_id, store_type, memory_type, content,
-                    metadata_json, source_id)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (mid, store_type, memory_type, content, meta_json, source_id),
+                   (memory_id, store_type, memory_type, content, metadata_json,
+                    source_id, embedding)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (mid, store_type, memory_type, content, meta_json, source_id, emb_json),
             )
         return self.get_memory(mid) or {}
 
