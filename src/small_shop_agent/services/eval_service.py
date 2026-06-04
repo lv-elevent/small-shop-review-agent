@@ -160,6 +160,23 @@ class EvalService:
             "error": None,
         }
 
+    def get_eval_trend_data(self, limit: int = 10) -> list[dict]:
+        """Return the last N eval runs as chart-ready trend data."""
+        runs = self._eval_repo.list_eval_runs(limit=limit)
+        trend = []
+        for r in runs:
+            trend.append({
+                "eval_run_id": r.get("eval_run_id", ""),
+                "batch_id": r.get("batch_id", ""),
+                "created_at": r.get("created_at", ""),
+                "topic_accuracy": r.get("topic_accuracy"),
+                "sentiment_accuracy": r.get("sentiment_accuracy"),
+                "unsafe_reply_count": r.get("unsafe_reply_count"),
+                "schema_failure_count": r.get("schema_failure_count"),
+                "total_eval_cases": r.get("total_eval_cases"),
+            })
+        return list(reversed(trend))  # oldest first for charts
+
     def get_latest_eval(self) -> dict[str, Any] | None:
         """Return the most recent eval result."""
         return self._eval_repo.get_latest_eval()
