@@ -13,6 +13,7 @@ from small_shop_agent.storage.repositories.reply_repository import ReplyReposito
 from small_shop_agent.storage.repositories.trace_repository import TraceRepository
 from small_shop_agent.storage.repositories.review_repository import ReviewRepository
 from small_shop_agent.evals.eval_runner import run_full_eval
+from small_shop_agent.evals.scorers.red_team_safety import load_red_team_cases
 from small_shop_agent.demo.demo_loader import DemoLoader
 from small_shop_agent.harness.verification.fallback_rules import classify_by_keywords
 from small_shop_agent.services.types import EvalResult
@@ -75,6 +76,12 @@ class EvalService:
         drafts = self._reply_repo.list_drafts(batch_id)
         traces = self._trace_repo.get_traces(batch_id)
 
+        # Load red-team cases and previous eval for trend
+        red_team_cases = load_red_team_cases()
+        previous_results = self._eval_repo.list_eval_runs(limit=2)
+        if previous_results and previous_results[0].get("eval_run_id") == eval_run_id:
+            previous_results = previous_results[1:]
+
         # Build ground truth — prefer demo mock data, fall back to rule-based
         mock_class = self._demo_loader.load_mock_classification()
         mock_sent = self._demo_loader.load_mock_sentiment()
@@ -96,7 +103,7 @@ class EvalService:
                 sentiment_gt[rid] = _rule_sentiment(r)
 
         # Run eval
-        report = run_full_eval(analysis, drafts, traces, topic_gt, sentiment_gt)
+        report = run_full_eval(analysis, drafts, traces, topic_gt, sentiment_gt, red_team_cases=red_team_cases, previous_results=previous_results)
 
         # No matching cases at all — shouldn't happen with rule-based fallback
         if report["total_eval_cases"] == 0:
@@ -132,7 +139,8 @@ class EvalService:
             output_summary=(
                 f"topic_acc={report['topic_accuracy']:.2%}, "
                 f"sent_acc={report['sentiment_accuracy']:.2%}, "
-                f"unsafe={report['unsafe_reply_count']}"
+                f"unsafe={report['unsafe_reply_count']}, "
+                f"red_team_recall={report.get('red_team_recall', 0):.2%}"
             ),
             latency_ms=0,
             model_name="rule_based",
