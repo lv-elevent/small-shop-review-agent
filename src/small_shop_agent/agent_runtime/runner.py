@@ -6,6 +6,7 @@ from typing import Any
 from loguru import logger
 
 from small_shop_agent.agent_runtime.state import AgentState, create_initial_state
+from small_shop_agent.agent_runtime.orchestrator import AgentOrchestrator
 from small_shop_agent.agent_runtime.graph.review_workflow import (
     run_agent_graph,
     run_agent_graph_async,
@@ -80,7 +81,7 @@ def run_with_agent_runtime(
     batch_repo.update_status(batch_id, "analyzing")
 
     # ── Run graph ─────────────────────────────────────────────────────
-    from small_shop_agent.core.config import AGENT_ASYNC_ENABLED
+    from small_shop_agent.core.config import AGENT_ASYNC_ENABLED, WORKFLOW_RUNTIME
 
     if AGENT_ASYNC_ENABLED:
         import asyncio
@@ -93,6 +94,16 @@ def run_with_agent_runtime(
             insight_repo=insight_repo,
             reply_repo=reply_repo,
         ))
+    elif WORKFLOW_RUNTIME == "multi_agent":
+        orchestrator = AgentOrchestrator()
+        final_state = orchestrator.run(
+            state=state,
+            provider=provider,
+            trace_repo=trace_repo,
+            analysis_repo=analysis_repo,
+            insight_repo=insight_repo,
+            reply_repo=reply_repo,
+        )
     else:
         final_state = run_agent_graph(
             state=state,

@@ -31,7 +31,7 @@ DEMO_STORE_TYPE: str = "coffee_shop"
 # ── Runtime ─────────────────────────────────────────────────────
 # "pipeline" = old WorkflowService, "agent_graph" = new agent_runtime
 _WORKFLOW_RUNTIME_ENV = __import__("os").environ.get("WORKFLOW_RUNTIME", "agent_graph")
-WORKFLOW_RUNTIME: str = _WORKFLOW_RUNTIME_ENV if _WORKFLOW_RUNTIME_ENV in ("pipeline", "agent_graph") else "pipeline"
+WORKFLOW_RUNTIME: str = _WORKFLOW_RUNTIME_ENV if _WORKFLOW_RUNTIME_ENV in ("pipeline", "agent_graph", "multi_agent") else "pipeline"
 
 # ── Async ────────────────────────────────────────────────────────
 _ASYNC_ENV = __import__("os").environ.get("AGENT_ASYNC_ENABLED", "true")
