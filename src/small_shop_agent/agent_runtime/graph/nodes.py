@@ -122,7 +122,8 @@ def insight_node(
     state["current_step"] = "insights"
 
     # ── Phase 1: Enrich analysis_rows with tool-gathered context ──────
-    from small_shop_agent.agent_runtime.tools import count_by_topic
+    from mcps.reviews.mcp_client import get_mcp_client
+    mcp = get_mcp_client()
 
     batch_id = state["batch_id"]
     # Collect topic counts for negative-candidate topics
@@ -133,8 +134,8 @@ def insight_node(
 
     topic_counts: dict[str, int] = {}
     for topic in neg_topics:
-        tr = count_by_topic(topic=topic, batch_id=batch_id, trace=False)
-        topic_counts[topic] = tr["count"] if tr["success"] else 0
+        tr = mcp.call("count_by_topic", {"topic": topic, "batch_id": batch_id})
+        topic_counts[topic] = tr.get("count", 0) if tr.get("success") else 0
 
     enriched_rows: list[dict[str, Any]] = []
     for a in state["analysis_rows"]:
@@ -229,13 +230,10 @@ def reply_node(
     state["current_step"] = "reply_drafting"
 
     # ── Phase 1: Gather tool context ──────────────────────────────────
-    from small_shop_agent.agent_runtime.tools import (
-        lookup_review,
-        get_safety_policy_snippet,
-        search_reviews,
-    )
+    from mcps.reviews.mcp_client import get_mcp_client
+    mcp = get_mcp_client()
 
-    safety = get_safety_policy_snippet(policy_type="all", trace=False)
+    safety = mcp.call("get_safety_policy_snippet", {"policy_type": "all"})
     safety_reasons = safety.get("reasons", {}) if safety["success"] else {}
     safety_blocked = [k for k, v in safety.get("patterns", {}).items()
                       if k in ("attack_customer", "disclose_privacy",
